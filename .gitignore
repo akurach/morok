@@ -27,8 +27,7 @@ morok.apk.private.pem
 
 # Внутренние планировочные документы — не публикуются
 TZ.md
-W3_NOTES_*.md
-W4_NOTES_*.md
+W*_NOTES_*.md
 
 # Сырые кадры скриншот-стенда
 docs/screenshots/.raw/
