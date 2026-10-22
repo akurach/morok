@@ -1,7 +1,7 @@
 {
   "format": 2,
   "channel": "stable",
-  "updated_at": "2026-10-21",
+  "updated_at": "2026-10-22",
   "note": "Агрегатный индекс. bin_update.sh читает per-component манифесты (manifest_url), формат v2 per-arch — см. W3_NOTES_D.md.",
   "components": {
     "nfqws2": {

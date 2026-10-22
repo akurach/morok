@@ -1,13 +1,26 @@
 {
-	"version": "0.2.0",
-	"ipk": {
-		"url": "https://github.com/akurach/morok/releases/download/v0.2.0/luci-app-morok_0.2.0-1_aarch64_cortex-a53.ipk",
-		"sha256": "346baf2a17b96eded17e6dfc6d45feb9dc745019eae26b9cc2a9087335f05d2e"
-	},
-	"apk": {
-		"url": "https://github.com/akurach/morok/releases/download/v0.2.0/luci-app-morok_0.2.0-r1_aarch64_cortex-a53.apk",
-		"sha256": "6c5fa4b46415f178761f67503c6775b5bf2255ac3a10be1ecb282d2e76fde13c"
-	},
-	"notes": "Канал самообновления Морока. Релиз-ассеты на GitHub Releases, манифест зеркалируется через jsdelivr. v0.2.0: Xray-ядро с xhttp, AmneziaWG, метрики, диагностика доставки пакетов, маркет пресетов.",
-	"min_openwrt": "23.05"
+  "app": "luci-app-morok",
+  "channel": "stable",
+  "version": "0.2.0",
+  "release": "0.2.0-1",
+  "tag": "v0.2.0",
+  "released_at": "2026-10-22",
+  "release_page": "https://github.com/akurach/morok/releases/tag/v0.2.0",
+  "min_openwrt": "23.05",
+  "ipk": {
+    "file": "luci-app-morok_0.2.0-1_aarch64_cortex-a53.ipk",
+    "url": "https://github.com/akurach/morok/releases/download/v0.2.0/luci-app-morok_0.2.0-1_aarch64_cortex-a53.ipk",
+    "sha256": "ce478a3d23a632a3b9ebb6ed34d7b313aff4b009a30b0ea9294b7c3a59e3b8dc",
+    "arch": "aarch64_cortex-a53",
+    "pm": "opkg",
+    "openwrt": "<= 24.x (и GL.iNet 4.x)"
+  },
+  "apk": {
+    "file": "luci-app-morok_0.2.0-r1_aarch64_cortex-a53.apk",
+    "url": "https://github.com/akurach/morok/releases/download/v0.2.0/luci-app-morok_0.2.0-r1_aarch64_cortex-a53.apk",
+    "sha256": "ed37f44fff1a3b919e8f7ab228318d73eef384fbaea721097b78da30576b92a6",
+    "arch": "aarch64_cortex-a53",
+    "pm": "apk",
+    "openwrt": ">= 25.x"
+  }
 }

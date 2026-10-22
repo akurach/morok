@@ -2,7 +2,7 @@
   "component": "nfqws2",
   "version": "1.0.5.2",
   "channel": "stable",
-  "updated_at": "2026-10-21",
+  "updated_at": "2026-10-22",
   "arch": {
     "aarch64_cortex-a53": {
       "url": "https://github.com/akurach/morok/releases/download/v0.2.0/nfqws2-1.0.5.2_aarch64_cortex-a53",
