@@ -150,8 +150,12 @@ function bin_running(name) {
 	return pid != null && pid != '';
 }
 
-// AmneziaWG (Wave 3.1): тип ноды awg доступен только при установленных
-// kmod-amneziawg (модуль на диске или загружен) и amneziawg-tools (awg)
+// AmneziaWG: тип ноды awg доступен при kernel-бэкенде (kmod-amneziawg,
+// модуль на диске или загружен) или userspace-бэкенде (вендорный
+// amneziawg-go — для прошивок, где kmod не загрузить); в обоих случаях
+// нужна утилита awg из amneziawg-tools
+const AWG_GO_BIN = '/usr/lib/morok/bin/amneziawg-go';
+
 function awg_kmod_present() {
 	let p = fs.popen("ls /lib/modules/*/amneziawg.ko 2>/dev/null | head -1; lsmod 2>/dev/null | awk '$1==\"amneziawg\"{print $1}' | head -1");
 	if (!p) return false;
@@ -160,8 +164,14 @@ function awg_kmod_present() {
 	return out != null && replace(out, /\s+/g, '') != '';
 }
 
+function awg_backend() {
+	if (awg_kmod_present()) return 'kernel';
+	if (fs.stat(AWG_GO_BIN) != null) return 'userspace';
+	return 'none';
+}
+
 function awg_available() {
-	return awg_kmod_present() && fs.stat('/usr/bin/awg') != null;
+	return awg_backend() != 'none' && fs.stat('/usr/bin/awg') != null;
 }
 
 // /tmp/dhcp.leases: "expiry mac ip hostname clientid"
@@ -232,7 +242,7 @@ const SECTION_TYPES = [ 'globals', 'fallback', 'antidpi', 'node',
 	'subscription', 'rule', 'device', 'source', 'component' ];
 // вендорные бинари, которые умеем показывать даже без UCI-секции component
 // (роутер обновлён файлами, а конфиг ещё старый)
-const KNOWN_BINS = [ 'sing-box', 'nfqws2', 'xray', 'byedpi' ];
+const KNOWN_BINS = [ 'sing-box', 'nfqws2', 'xray', 'byedpi', 'amneziawg-go' ];
 
 function sh(cmd) {
 	// stdout команды целиком (stderr глушим); null если не запустилась
@@ -904,8 +914,9 @@ let methods = {
 			all_dead: running && engine == 'sing-box' && length(keys(delays)) == 0,
 			antidpi_engine: c.get(CONF, 'antidpi', 'engine') || 'none',
 			antidpi_running: bin_running('nfqws2'),
-			// Wave 3.1: доступность типа ноды awg (kmod + утилита awg)
+			// Wave 3.1: доступность типа ноды awg (kmod или amneziawg-go + утилита awg)
 			awg_available: awg_available(),
+			awg_backend: awg_backend(),
 			wizard_done: g.wizard_done == '1'
 		};
 	},
@@ -1037,10 +1048,11 @@ let methods = {
 		if (o.type == 'awg') {
 			// AmneziaWG (Wave 3.1): junk-параметры в sing-box/xray
 			// outbound не выразить — живут UCI-опциями, интерфейс
-			// поднимает awg.sh. Без kmod нода бесполезна — не заводим.
+			// поднимает awg.sh. Без бэкенда (kmod/amneziawg-go) нода
+			// бесполезна — не заводим.
 			if (!awg_available()) {
 				c.delete(CONF, sid);
-				return { ok: false, error: 'нода типа awg недоступна: не установлены kmod-amneziawg/amneziawg-tools' };
+				return { ok: false, error: 'нода типа awg недоступна: нужен kmod-amneziawg или userspace-бэкенд amneziawg-go (и amneziawg-tools)' };
 			}
 			let endpoint = o.endpoint || '';
 			let server = o.server || '', port = o.server_port || 0;
