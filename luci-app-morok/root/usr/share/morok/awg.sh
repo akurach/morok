@@ -109,6 +109,10 @@ write_conf() {
 
 go_pidfile() { echo "$RUN_DIR/$1.go.pid"; }
 
+# короткая пауза: busybox sleep на GL-прошивке не понимает дробные
+# секунды ('invalid number'), usleep — есть
+nap() { usleep 200000 2>/dev/null || sleep 1; }
+
 go_find_pid() {
 	# pid демона amneziawg-go, обслуживающего $1, — по /proc/*/cmdline.
 	# Страховка к pidfile: amneziawg-go без -f сам уходит в фон, и $!
@@ -147,10 +151,10 @@ stop_go_daemon() {
 		case "$pid" in ''|*[!0-9]*) continue ;; esac
 		kill -0 "$pid" 2>/dev/null || continue
 		kill "$pid" 2>/dev/null
-		# tun-интерфейс умирает вместе с демоном; ждём недолго
+		# tun-интерфейс умирает вместе с демоном; ждём недолго (до ~2 с)
 		i=0
-		while [ $i -lt 20 ] && kill -0 "$pid" 2>/dev/null; do
-			sleep 0.1; i=$((i + 1))
+		while [ $i -lt 10 ] && kill -0 "$pid" 2>/dev/null; do
+			nap; i=$((i + 1))
 		done
 		kill -9 "$pid" 2>/dev/null
 	done
@@ -175,12 +179,12 @@ start_go_daemon() {
 		exec $GO_BIN -f $ifname
 	) &
 	echo $! > "$pf"
-	# демон создаёт интерфейс не мгновенно — ждём до 5 с
-	while [ $tries -lt 50 ]; do
+	# демон создаёт интерфейс не мгновенно — ждём до ~5 с
+	while [ $tries -lt 25 ]; do
 		ip link show dev $ifname >/dev/null 2>&1 && return 0
 		# демон умер на старте (занято, нет /dev/net/tun) — ждать бессмысленно
 		go_daemon_running "$ifname" || break
-		sleep 0.1; tries=$((tries + 1))
+		nap; tries=$((tries + 1))
 	done
 	say "нода $id: amneziawg-go не создал интерфейс $ifname (лог: $MOROK_LOG)"
 	stop_go_daemon "$ifname"
