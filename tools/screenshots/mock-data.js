@@ -130,41 +130,163 @@ function buildMetrics() {
 
 /* ---------- маркет пресетов ---------- */
 var market = { presets: [
-	{ id: 'p-video', emoji: '🎬', label: 'Видеохостинги',
-		description: 'YouTube и сопутствующие CDN — через оптимизацию доставки, без VPN. Профиль nfqws2 применится автоматически.',
-		sources: [ { label: 'YouTube (community list)', url: 'https://lists.example.com/community/youtube.txt', update_interval: 86400 } ],
-		rules: [ { label: 'YouTube', source: 'YouTube (community list)', action: 'antidpi' } ],
-		antidpi_strategy: 'youtube' },
-	{ id: 'p-voice', emoji: '💬', label: 'Мессенджеры и голос',
-		description: 'Discord: голосовые каналы и медиа — через туннель, остальное не трогаем.',
-		sources: [ { label: 'Discord (community list)', url: 'https://lists.example.com/community/discord.txt', update_interval: 86400 } ],
-		rules: [ { label: 'Discord', source: 'Discord (community list)', action: 'proxy' } ] },
-	{ id: 'p-meta', emoji: '📸', label: 'Meta',
-		description: 'Instagram, Facebook, Threads и CDN Meta — через туннель по geosite.',
-		sources: [],
-		rules: [ { label: 'Meta', match_type: 'geosite', match: [ 'meta', 'facebook', 'instagram' ], action: 'proxy' } ] },
-	{ id: 'p-tiktok', emoji: '🎵', label: 'TikTok',
-		description: 'TikTok и его CDN — через туннель. Два правила: приложение и веб.',
-		sources: [ { label: 'TikTok (community list)', url: 'https://lists.example.com/community/tiktok.txt', update_interval: 86400 } ],
-		rules: [
-			{ label: 'TikTok', source: 'TikTok (community list)', action: 'proxy' },
-			{ label: 'TikTok CDN', match_type: 'geosite', match: [ 'tiktokcdn' ], action: 'proxy' }
-		] },
-	{ id: 'p-media', emoji: '📰', label: 'Независимые медиа',
-		description: 'Кураторский список новостных сайтов — через туннель.',
-		sources: [ { label: 'Independent media (community list)', url: 'https://lists.example.com/community/media.txt', update_interval: 86400 } ],
-		rules: [ { label: 'Независимые медиа', source: 'Independent media (community list)', action: 'proxy' } ] },
-	{ id: 'p-games', emoji: '🎮', label: 'Игровые сервисы',
-		description: 'Steam, Epic, Battle.net — напрямую для минимального пинга, лаунчеры с региональными ограничениями — через туннель.',
-		sources: [],
-		rules: [
-			{ label: 'Игровые CDN', match_type: 'geosite', match: [ 'steam', 'epicgames' ], action: 'direct' },
-			{ label: 'Игровые лаунчеры', match_type: 'custom', match: [ 'launcher.example.com' ], action: 'proxy' }
-		] },
-	{ id: 'p-ai', emoji: '🧩', label: 'AI-сервисы',
-		description: 'Популярные AI-ассистенты и API — через туннель, адаптивный сторож включён.',
-		sources: [],
-		rules: [ { label: 'AI-сервисы', match_type: 'geosite', match: [ 'openai', 'anthropic' ], action: 'proxy', adaptive: true } ] }
+  {
+    "id": "youtube",
+    "label": "YouTube",
+    "emoji": "📺",
+    "description": "Оптимизация доставки до видеохостингов YouTube по geosite-списку (профили фрагментации пакетов, стратегия «YouTube (мягкий)»). Адаптивный контроль: если оптимизация перестанет работать — правило временно уйдёт в VPN и само вернётся.",
+    "antidpi_strategy": "youtube",
+    "sources": [],
+    "rules": [
+      {
+        "label": "YouTube",
+        "match_type": "geosite",
+        "match": [
+          "youtube"
+        ],
+        "action": "antidpi",
+        "adaptive": true
+      }
+    ]
+  },
+  {
+    "id": "discord",
+    "label": "Discord",
+    "emoji": "🎮",
+    "description": "Discord через VPN: geosite-список покрывает discord.com, discord.gg, discord.media и голосовые серверы.",
+    "sources": [],
+    "rules": [
+      {
+        "label": "Discord",
+        "match_type": "geosite",
+        "match": [
+          "discord"
+        ],
+        "action": "proxy"
+      }
+    ]
+  },
+  {
+    "id": "meta",
+    "label": "Meta (Instagram/Facebook)",
+    "emoji": "📸",
+    "description": "Instagram, Facebook, Threads, WhatsApp — через VPN (geosite meta: instagram.com, fb.com, cdninstagram.com и CDN).",
+    "sources": [],
+    "rules": [
+      {
+        "label": "Meta",
+        "match_type": "geosite",
+        "match": [
+          "meta"
+        ],
+        "action": "proxy"
+      }
+    ]
+  },
+  {
+    "id": "tiktok",
+    "label": "TikTok",
+    "emoji": "🎵",
+    "description": "TikTok через VPN. Внешних поддерживаемых списков нет — вшит актуальный набор доменов TikTok/ByteDance (включая CDN).",
+    "sources": [],
+    "rules": [
+      {
+        "label": "TikTok",
+        "match_type": "custom",
+        "match": [
+          "tiktok.com",
+          "tiktokv.com",
+          "tiktokv.us",
+          "tiktokw.us",
+          "tiktokcdn.com",
+          "tiktokcdn-us.com",
+          "tiktokcdn-eu.com",
+          "tiktokd.org",
+          "tiktokd.net",
+          "musical.ly",
+          "muscdn.com",
+          "byteoversea.com",
+          "byteoversea.net",
+          "ibyteimg.com",
+          "ibytedtos.com",
+          "isnssdk.com",
+          "sgsnssdk.com",
+          "ipstatp.com",
+          "ttlivecdn.com",
+          "ttwstatic.com",
+          "ttoversea.net",
+          "lf16-tiktok-web.ttwstatic.com"
+        ],
+        "action": "proxy"
+      }
+    ]
+  },
+  {
+    "id": "chatgpt",
+    "label": "ChatGPT/OpenAI",
+    "emoji": "🤖",
+    "description": "ChatGPT, API OpenAI и Sora — через VPN: openai.com, chatgpt.com и служебные домены (статика, загрузки, антибот-проверки).",
+    "sources": [],
+    "rules": [
+      {
+        "label": "ChatGPT/OpenAI",
+        "match_type": "custom",
+        "match": [
+          "chatgpt.com",
+          "openai.com",
+          "oaistatic.com",
+          "oaiusercontent.com",
+          "chat.com",
+          "sora.com",
+          "openaicom.imgix.net",
+          "openai-api.arkoselabs.com"
+        ],
+        "action": "proxy"
+      }
+    ]
+  },
+  {
+    "id": "copilot",
+    "label": "Copilot/Bing",
+    "emoji": "🧭",
+    "description": "Microsoft Copilot и поиск Bing — через VPN: bing.com целиком (Copilot живёт внутри) + copilot.microsoft.com и вход в аккаунт (login.live.com).",
+    "sources": [],
+    "rules": [
+      {
+        "label": "Copilot/Bing",
+        "match_type": "custom",
+        "match": [
+          "copilot.microsoft.com",
+          "bing.com",
+          "bingapis.com",
+          "bing.net",
+          "login.live.com"
+        ],
+        "action": "proxy"
+      }
+    ]
+  },
+  {
+    "id": "rkn-full",
+    "label": "Расширенный список сообщества (re:filter)",
+    "emoji": "🛡",
+    "description": "Расширенный список сообщества — через VPN: агрегированный список re:filter (~81k доменов). Список скачивается с зеркала jsdelivr и обновляется по расписанию.",
+    "sources": [
+      {
+        "label": "re:filter — домены",
+        "url": "https://cdn.jsdelivr.net/gh/1andrevich/Re-filter-lists@main/domains_all.lst"
+      }
+    ],
+    "rules": [
+      {
+        "label": "Расширенный список сообщества (re:filter)",
+        "match_type": "source_list",
+        "source": "re:filter — домены",
+        "match": [],
+        "action": "proxy"
+      }
+    ]
+  }
 ] };
 
 /* ---------- оптимизация доставки ---------- */
