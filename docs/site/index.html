@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Морок — умная маршрутизация на роутере OpenWrt</title>
+<meta name="description" content="Морок — LuCI-приложение для OpenWrt: прозрачная маршрутизация, оптимизация доставки пакетов, умные правила, fallback-цепочки. Поставил — и управляешь трафиком всей сети.">
+<style>
+  :root {
+    --bg: #0d0b12;
+    --bg2: #141020;
+    --card: #191527;
+    --line: #2b2440;
+    --text: #e8e2f4;
+    --dim: #9a8fb8;
+    --accent: #b58cff;
+    --accent2: #6ee7c8;
+    --ember: #ffb46e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "PT Serif", Georgia, "Times New Roman", serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  code, pre, .mono, .cmd {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---- туман ---- */
+  .mist {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(60% 45% at 20% 0%, rgba(181,140,255,.14), transparent 60%),
+      radial-gradient(50% 40% at 85% 15%, rgba(110,231,200,.08), transparent 60%),
+      radial-gradient(70% 50% at 50% 100%, rgba(255,180,110,.06), transparent 60%);
+  }
+
+  header {
+    position: relative; z-index: 1;
+    padding: 28px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .brand { font-size: 26px; letter-spacing: .14em; }
+  .brand .rune { color: var(--accent); }
+  nav a {
+    color: var(--dim); text-decoration: none; margin-left: 28px; font-size: 15px;
+    border-bottom: 1px solid transparent; transition: .2s;
+  }
+  nav a:hover { color: var(--text); border-color: var(--accent); }
+
+  /* ---- hero ---- */
+  .hero { position: relative; z-index: 1; text-align: center; padding: 110px 0 90px; }
+  .hero h1 {
+    font-size: clamp(56px, 10vw, 110px);
+    font-weight: 700; letter-spacing: .12em; line-height: 1.05;
+    background: linear-gradient(180deg, #fff 20%, var(--accent) 75%, #5a3d99);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 80px rgba(181,140,255,.25);
+  }
+  .hero .sub {
+    margin: 22px auto 0; max-width: 640px; color: var(--dim);
+    font-size: clamp(17px, 2.4vw, 21px); font-style: italic;
+  }
+  .hero .sub b { color: var(--text); font-style: normal; }
+  .cmd {
+    display: inline-block; margin-top: 42px; padding: 16px 22px;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    font-size: 14px; color: var(--accent2); text-align: left;
+    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    max-width: 100%; overflow-x: auto; white-space: nowrap;
+  }
+  .cmd .c { color: var(--dim); }
+  .cta-row { margin-top: 30px; }
+  .btn {
+    display: inline-block; padding: 13px 30px; border-radius: 10px;
+    text-decoration: none; font-size: 16px; transition: .2s;
+  }
+  .btn-p { background: var(--accent); color: #14082b; font-weight: 700; }
+  .btn-p:hover { background: #c9a6ff; transform: translateY(-2px); }
+  .btn-g { border: 1px solid var(--line); color: var(--dim); margin-left: 12px; }
+  .btn-g:hover { color: var(--text); border-color: var(--accent); }
+
+  /* ---- секции ---- */
+  section { position: relative; z-index: 1; padding: 80px 0; }
+  h2 {
+    font-size: clamp(28px, 4vw, 40px); letter-spacing: .05em; margin-bottom: 14px;
+  }
+  h2::before { content: "§ "; color: var(--accent); }
+  .lead { color: var(--dim); max-width: 700px; margin-bottom: 44px; font-size: 17px; }
+
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 26px; transition: .25s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .card h3 { font-size: 19px; margin-bottom: 10px; color: var(--accent2); }
+  .card p { color: var(--dim); font-size: 15px; }
+
+  /* ---- таблица совместимости ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 400; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  td .ok { color: var(--accent2); }
+
+  /* ---- шаги ---- */
+  .steps { counter-reset: s; }
+  .step {
+    position: relative; padding: 22px 0 22px 70px; border-bottom: 1px solid var(--line);
+  }
+  .step::before {
+    counter-increment: s; content: counter(s);
+    position: absolute; left: 0; top: 18px;
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid var(--accent); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .step h3 { font-size: 18px; margin-bottom: 6px; }
+  .step p { color: var(--dim); font-size: 15px; }
+  .step code { color: var(--accent2); font-size: 13px; }
+
+  footer {
+    position: relative; z-index: 1;
+    border-top: 1px solid var(--line); padding: 40px 0 60px;
+    color: var(--dim); font-size: 14px; text-align: center;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  .sig { margin-top: 14px; font-style: italic; opacity: .7; }
+
+  @media (max-width: 640px) {
+    nav { display: none; }
+    .step { padding-left: 58px; }
+    .cmd { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="mist"></div>
+
+<header>
+  <div class="wrap">
+    <div class="brand"><span class="rune">ᛗ</span> МОРОКЪ</div>
+    <nav>
+      <a href="#features">Возможности</a>
+      <a href="#install">Установка</a>
+      <a href="#compat">Совместимость</a>
+      <a href="https://github.com/akurach/morok">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <h1>МОРОКЪ</h1>
+    <p class="sub">Старославянское <b>«наваждение, обман зрения»</b>.<br>
+    Умная маршрутизация и оптимизация доставки до любых сервисов прямо на роутере —
+    для всех устройств в сети разом.</p>
+    <div class="cmd"><span class="c">$</span> curl -fsSL https://cdn.jsdelivr.net/gh/akurach/morok@main/build/install.sh | sh</div>
+    <div class="cta-row">
+      <a class="btn btn-p" href="#install">Поставить на роутер</a>
+      <a class="btn btn-g" href="https://github.com/akurach/morok">Исходный код</a>
+    </div>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Возможности</h2>
+    <p class="lead">Замена PassWall с нормальным UX: поставил — и управляешь трафиком всей сети.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Прозрачная маршрутизация</h3>
+        <p>tproxy на sing-box или xray — оба ядра внутри пакета, переключение одной кнопкой. На устройствах настраивать нечего.</p>
+      </div>
+      <div class="card">
+        <h3>Оптимизация доставки</h3>
+        <p>zapret2/nfqws2 из коробки: профили фрагментации пакетов для стабильной доставки до видеохостингов и других сервисов, адаптивные стратегии со сторожем guardian.</p>
+      </div>
+      <div class="card">
+        <h3>Умные правила</h3>
+        <p>Готовые списки (YouTube, Discord, Meta, списки сообщества re:filter ~81k доменов), geosite/geoip, кастомные правила — что в туннель, что напрямую, что на оптимизацию.</p>
+      </div>
+      <div class="card">
+        <h3>Fallback-цепочки</h3>
+        <p>Нода перестала отвечать — переключились на следующую живую. Kill switch на выбор: перекрыть трафик, пустить напрямую или ничего не трогать.</p>
+      </div>
+      <div class="card">
+        <h3>По устройствам</h3>
+        <p>Телевизор — через прокси, рабочий ноут — напрямую, консоль — через конкретную ноду. Per-device маршруты по MAC.</p>
+      </div>
+      <div class="card">
+        <h3>Прозрачность</h3>
+        <p>Метрики, графики скорости, журнал решений: что происходит с трафиком и почему выбрана именно эта нода. Ничего не ломается молча.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Установка</h2>
+    <p class="lead">Одна команда по SSH. Канал раздаётся через jsdelivr — работает там, где GitHub raw недоступен.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Подключись к роутеру</h3>
+        <p><code>ssh root@192.168.8.1</code> — GL.iNet Flint 2 или любой OpenWrt 23.05+</p>
+      </div>
+      <div class="step">
+        <h3>Запусти установщик</h3>
+        <p><code>curl -fsSL https://cdn.jsdelivr.net/gh/akurach/morok@main/build/install.sh | sh</code><br>
+        Сам определит opkg/apk, скачает релиз, проверит sha256, поставит зависимости.</p>
+      </div>
+      <div class="step">
+        <h3>Добавь подписку или ноды</h3>
+        <p>LuCI → Services → Морок. VLESS / VMess / Trojan / SS / Hysteria2 / TUIC / AmneziaWG.</p>
+      </div>
+      <div class="step">
+        <h3>Включи и забудь</h3>
+        <p>Режим smart: выбранные списки — в туннель или на оптимизацию доставки, остальное — напрямую. Автообновление подписок и списков по расписанию.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="compat">
+  <div class="wrap">
+    <h2>Совместимость</h2>
+    <p class="lead">Архитектура сборки — aarch64_cortex-a53 (MediaTek Filogic 830 и др.). Нужно ~64 МБ флеша и ≥ 256 МБ RAM.</p>
+    <table>
+      <tr><th>Прошивка</th><th>Пакетник</th><th>Пакет</th><th>Статус</th></tr>
+      <tr><td>GL.iNet Flint 2 (4.x)</td><td>opkg</td><td>.ipk</td><td><span class="ok">✓</span> первичная платформа</td></tr>
+      <tr><td>OpenWrt 24.10</td><td>opkg</td><td>.ipk</td><td><span class="ok">✓</span> проверено</td></tr>
+      <tr><td>OpenWrt 23.05</td><td>opkg</td><td>.ipk</td><td><span class="ok">✓</span> проверено</td></tr>
+      <tr><td>OpenWrt 25.x</td><td>apk</td><td>.apk</td><td><span class="ok">✓</span> проверено</td></tr>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><a href="https://github.com/akurach/morok">github.com/akurach/morok</a> · GPL-3.0 · без телеметрии</p>
+    <p class="sig">«Лёгкий морок — и трафик под контролем.»</p>
+  </div>
+</footer>
+
+</body>
+</html>

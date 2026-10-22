@@ -1,0 +1,194 @@
+# Morok — единственный источник правды для всего приложения.
+# Фронт читает/пишет только сюда (через ubus morok), бэкенд из этого
+# генерирует /var/etc/morok/sing-box.json и nft-правила.
+
+config globals 'globals'
+	option enabled '1'
+	# smart   — по правилам маршрутизации
+	# global  — весь трафик в туннель
+	# off     — прокси выключен
+	option mode 'smart'
+	# id активной ноды; пусто — возьмётся первая из цепочки/включённых
+	option active_node ''
+	# tproxy — прозрачный прокси на весь LAN
+	option transparent '1'
+	# zapret-совместимая оптимизация доставки для помеченных правил
+	option antidpi '1'
+	option dns_hijack '1'
+	option log_level 'warn'
+	# канал самообновления приложения (Wave 4.1): URL манифеста app.json;
+	# пусто/отсутствует — канал по умолчанию (jsdelivr-зеркало репо)
+	# option app_channel 'https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/app.json'
+
+config fallback 'fallback'
+	option enabled '1'
+	# URL-test: проверяем реальным запросом, а не ping
+	option test_url 'https://www.gstatic.com/generate_204'
+	option test_interval '10'
+	# сколько подряд неудач = нода мертва
+	option fail_threshold '3'
+	# вернуться на основную, когда оживёт (с анти-флаппинг задержкой)
+	option auto_return '1'
+	option return_delay '60'
+	# kill | direct | nothing — поведение при смерти ВСЕХ нод
+	option kill_switch 'kill'
+	# порядок цепочки — список id нод; пусто = все включённые
+	# list chain 'cfgXXXXXXX'
+
+# ---------- оптимизация доставки ----------
+# отдельный сервис, НЕ VPN: движок, стратегия, адаптивные правила
+config antidpi 'antidpi'
+	# engine: zapret2 | byedpi | singbox-fragment | none
+	option engine 'zapret2'
+	# пресет стратегии: youtube | universal | custom
+	option strategy 'youtube'
+	option strategy_custom ''
+	# адаптивные правила: если доставка через движок умерла — временно
+	# уводим в прокси, периодически ресканируем, не ожила ли она
+	option adaptive '1'
+	option fail_threshold '3'
+	# как часто сторож проверяет живость прямого пути (сек)
+	option check_interval '300'
+	# как часто пытаемся вернуть правило обратно на оптимизацию (сек)
+	option rescan_interval '21600'
+	# URL для проверки доступности сервиса
+	option probe_url 'https://www.youtube.com/generate_204'
+
+# ---------- DNS ----------
+# mode: sing-box — удалённый DNS ходит через туннель (апстрим не видит
+#       запросы); direct — напрямую через upstream.
+# upstream: '8.8.8.8' (udp) | 'tls://1.1.1.1' | 'https://dns.google/dns-query'
+# hijack: перехват DNS-запросов клиентов в sing-box (globals.dns_hijack)
+config dns 'dns'
+	option mode 'sing-box'
+	option upstream 'https://1.1.1.1/dns-query'
+
+# ---------- ноды ----------
+# type: vless | trojan | hysteria2 | tuic | shadowsocks | wireguard | amneziawg
+# Ноды добавляются через UI (вручную или share-ссылкой) либо из подписки
+# (subscribe.sh + parse_nodes.uc, origin=<subscription-id>).
+# Пример ручной ноды:
+# config node
+# 	option enabled '1'
+# 	option label 'Моя нода'
+# 	option group 'Manual'
+# 	option type 'vless'
+# 	option server '1.2.3.4'
+# 	option port '443'
+# 	option uuid '...'
+# 	option flow 'xtls-rprx-vision'
+# 	option reality '1'
+# 	option reality_public_key '...'
+# 	option sni 'www.microsoft.com'
+
+# ---------- подписки ----------
+# url — список: основная и резервные ссылки. Обновление идёт по порядку,
+# запоминаем в last_good_url ту, что ответила; если все лежат — пробуем
+# скачать через активный прокси (домен подписки может быть недоступен
+# напрямую).
+# Пример:
+# config subscription
+# 	option enabled '1'
+# 	option label 'Мой VPN'
+# 	list url 'https://example.com/sub/main'
+# 	list url 'https://backup.example.com/sub/main'
+# 	option user_agent 'sing-box'
+# 	option update_interval '21600'
+# 	option update_via_proxy '1'
+
+# ---------- правила маршрутизации ----------
+# применяются сверху вниз, sing-box берёт ПЕРВЫЙ матч;
+# action: proxy | direct | block | antidpi.
+# ВАЖНО: узкие antidpi-правила (YouTube и т.п.) должны стоять ВЫШЕ
+# широких proxy-списков (re:filter), иначе youtube.com сматчится
+# в прокси раньше, чем дойдёт до оптимизации.
+config rule
+	option enabled '1'
+	option label 'YouTube, Discord, Meta'
+	option match_type 'geosite'
+	list match 'youtube'
+	list match 'discord'
+	list match 'meta'
+	option action 'antidpi'
+	# сторож следит: если доставка через движок умерла — уводит правило
+	# в proxy, при rescan_interval пытается вернуть обратно
+	option adaptive '1'
+
+config rule
+	option enabled '1'
+	option label 'Расширенный список сообщества (re:filter)'
+	option match_type 'source_list'     # берём домены из внешнего списка
+	option source 'refilter'
+	option action 'proxy'
+
+config rule
+	option enabled '1'
+	option label 'Мой список'
+	option match_type 'custom'
+	list match 'meduza.io'
+	list match 'novayagazeta.eu'
+	option action 'proxy'
+
+config rule
+	option enabled '1'
+	option label 'Российские сервисы'
+	option match_type 'geosite_geoip'
+	list match 'category-ru'
+	list match 'ru'
+	option action 'direct'
+
+config rule
+	option enabled '1'
+	option label 'Реклама и трекеры'
+	option match_type 'geosite'
+	list match 'category-ads-all'
+	option action 'block'
+
+# конечное правило: куда деваем всё остальное
+config rule
+	option enabled '1'
+	option label 'Всё остальное'
+	option match_type 'final'
+	option action 'proxy'
+
+# ---------- устройства ----------
+# per-device маршрутизация: устройству — свой путь, перекрывает общие правила
+# config device
+# 	option label 'PS5 в гостиной'
+# 	option mac 'AA:BB:CC:DD:EE:01'
+# 	option enabled '0'
+# 	# follow | direct | proxy | node:<id> — свой маршрут или следовать правилам
+# 	option route 'direct'
+
+# ---------- внешние источники списков ----------
+# URL зеркалим через jsdelivr: raw.githubusercontent.com не везде доступен
+config source 'refilter'
+	option enabled '1'
+	option label 're:filter — домены'
+	option url 'https://cdn.jsdelivr.net/gh/1andrevich/Re-filter-lists@main/domains_all.lst'
+	option update_interval '21600'
+
+# loyalsoldier раздаёт бинарные .dat, а не текстовые списки — наш
+# конвертер их не переваривает; выключен, оставлен как пример
+config source 'loyalsoldier'
+	option enabled '0'
+	option label 'v2ray rules-dat (geosite/geoip)'
+	option url 'https://github.com/Loyalsoldier/v2ray-rules-dat'
+	option update_interval '86400'
+
+# ---------- вендорные компоненты (Wave 2) ----------
+# реестр бинарей /usr/lib/morok/bin/ для страницы «Компоненты».
+# version — кэш после update_component; актуальная версия всегда
+# читается из самого бинаря. channel_url пуст — канал обновлений
+# появится в Wave 3.4 (манифест: {"version","url","sha256"}).
+config component 'sing_box'
+	option name 'sing-box'
+	option version ''
+	option channel_url ''
+	option path '/usr/lib/morok/bin/sing-box'
+
+config component 'nfqws2'
+	option name 'nfqws2'
+	option version ''
+	option channel_url ''
+	option path '/usr/lib/morok/bin/nfqws2'

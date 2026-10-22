@@ -1,0 +1,12 @@
+{
+  "component": "sing-box",
+  "version": "1.14.0",
+  "channel": "stable",
+  "updated_at": "2026-10-21",
+  "arch": {
+    "aarch64_cortex-a53": {
+      "url": "https://github.com/akurach/morok/releases/download/v0.2.0/sing-box-1.14.0_aarch64_cortex-a53",
+      "sha256": "5f4d9ef9436b36a6cb9db8831833264c11fe4cab1622cec465c0acfd3abfffac"
+    }
+  }
+}

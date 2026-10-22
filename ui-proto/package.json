@@ -1,0 +1,9 @@
+{
+  "name": "freenet-ui-proto",
+  "private": true,
+  "version": "0.1.0",
+  "description": "FreeNet — прототип интерфейса прокси-плагина для OpenWrt",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}

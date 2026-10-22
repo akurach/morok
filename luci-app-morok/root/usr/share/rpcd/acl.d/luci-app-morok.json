@@ -1,0 +1,38 @@
+{
+	"luci-app-morok": {
+		"description": "Grant access to Morok",
+		"read": {
+			"file": {
+				"/etc/config/morok": [ "read" ],
+				"/var/etc/morok/sing-box.json": [ "read" ],
+				"/var/etc/morok/xray.json": [ "read" ],
+				"/tmp/log/morok.log": [ "read" ]
+			},
+			"ubus": {
+				"morok": [ "status", "nodes", "rules", "chain", "sources", "traffic",
+					"devices", "read_log", "guardian_status", "get_dns",
+					"diagnose", "diagnose_step", "backup", "components", "check_domain",
+					"check_update", "get_antidpi", "test_antidpi", "scan_status",
+					"app_check", "market" ],
+				"morok_metrics": [ "read" ]
+			},
+			"uci": [ "morok" ]
+		},
+		"write": {
+			"ubus": {
+				"morok": [ "set_node", "select_node", "add_node", "del_node",
+					"add_subscription", "update_subscription", "del_subscription",
+					"set_subscription", "set_rule", "add_rule", "del_rule", "add_source",
+					"rename_rule", "reorder_rules",
+					"set_fallback", "set_global", "set_dns", "test_nodes", "apply",
+					"set_chain", "update_node", "set_device", "del_device",
+					"set_source", "update_source", "set_antidpi",
+					"scan_start", "scan_apply", "scan_stop",
+					"run_fix", "restore", "update_component", "rollback",
+					"app_update" ],
+				"morok_metrics": [ "reset" ]
+			},
+			"uci": [ "morok" ]
+		}
+	}
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru" data-theme="studio">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Линия — интерактивный макет домашнего сетевого менеджера для Flint 2.">
+  <title>Линия — интернет под вашим контролем</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e75a2c'/%3E%3Cpath d='M16 46 30 18h8L24 46zm19 0 14-28h8L43 46z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+<!--
+THESIS: Local network control as an audio receiver: a visible signal path, deliberate settings, explanations for each switch.
+OWN-WORLD: Warm porcelain, charcoal, vermilion; Onest; hairline dividers and tactile 10px controls. Night uses graphite and lime; Signal uses directional yellow.
+STORY: Read the active route, see alternatives, change one policy, test failure, recover confidently.
+FIRST VIEWPORT: A 216px navigation rail, compact demo toolbar, large network status, a full-width signal-path plate, then a two-column service ledger and event timeline. Main action checks the connection. Signature interaction switches the route diagram and its explanation together.
+FORM: Audio receiver signal-path panel, grounded candidate 5, seed e2df37f3. Code-led reviewable mockups; alternate appearances are delivered, not gated behind approval.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <div class="demo-bar">
+    <span class="demo-label"><span class="demo-dot"></span>Интерактивный макет <span class="desktop-only">· данные демонстрационные</span></span>
+    <div class="theme-picker" aria-label="Вариант оформления">
+      <button data-theme-choice="studio" aria-pressed="true"><span class="theme-swatch studio"></span>Студия</button>
+      <button data-theme-choice="night" aria-pressed="false"><span class="theme-swatch night"></span>Ночь</button>
+      <button data-theme-choice="signal" aria-pressed="false"><span class="theme-swatch signal"></span>Сигнал</button>
+    </div>
+  </div>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="#overview" aria-label="Линия — обзор"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M2 29 15 7h7L9 29zm14 0L29 7h7L23 29z"/></svg><span>линия<span class="brand-point">.</span></span></a>
+    <div class="home-switch"><span class="home-icon" data-icon="home"></span><div><strong>Мой дом</strong><span>Домашняя сеть</span></div><span class="status-dot"></span></div>
+    <nav aria-label="Основная навигация">
+      <a href="#overview" data-nav="overview"><span data-icon="overview"></span>Обзор</a>
+      <a href="#connections" data-nav="connections"><span data-icon="plug"></span>Подключения<span class="nav-count">3</span></a>
+      <a href="#rules" data-nav="rules"><span data-icon="routes"></span>Правила</a>
+      <a href="#automatic" data-nav="automatic"><span data-icon="shuffle"></span>Автовыбор</a>
+      <a href="#devices" data-nav="devices"><span data-icon="devices"></span>Устройства</a>
+      <div class="nav-divider"></div>
+      <a href="#diagnostics" data-nav="diagnostics"><span data-icon="activity"></span>Диагностика</a>
+      <a href="#system" data-nav="system"><span data-icon="settings"></span>Система</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <a class="setup-link" href="setup/index.html"><span data-icon="spark"></span><span>Первый запуск</span><span data-icon="arrow-up-right"></span></a>
+      <div class="router-mini"><span class="router-leds"><i></i><i></i><i></i></span><strong>Flint 2</strong><span>Локальное управление</span></div>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <button class="icon-button mobile-menu" id="menu-toggle" aria-label="Открыть навигацию" aria-expanded="false"><span data-icon="menu"></span></button>
+      <div class="breadcrumb"><span>Мой дом</span><span class="slash">/</span><strong id="breadcrumb-current">Обзор</strong></div>
+      <div class="topbar-tools"><span class="local-tag"><span data-icon="lock"></span>Локально</span><button class="icon-button" id="help-button" aria-label="О макете"><span data-icon="help"></span></button><button class="avatar" id="profile-button" aria-label="Параметры домашней сети">А</button></div>
+    </header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="app-footer"><span>Линия · концепт интерфейса</span><span>Flint 2 <span class="separator">/</span> OpenWrt 25.12.6 <span class="separator">/</span> <span class="footer-local">Всё управление — дома</span></span></footer>
+  </div>
+  <div class="nav-backdrop" id="nav-backdrop" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

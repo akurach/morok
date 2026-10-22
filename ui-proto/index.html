@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeNet — умная маршрутизация на роутере</title>
+<style>
+:root{
+  --bg:#0a0d13;
+  --bg2:#0e1219;
+  --panel:#12161f;
+  --panel2:#171c28;
+  --panel3:#1c2331;
+  --border:rgba(255,255,255,.065);
+  --border2:rgba(255,255,255,.11);
+  --text:#e8ebf2;
+  --muted:#8a93a6;
+  --muted2:#5d6577;
+  --accent:#7c9aff;
+  --accent2:#a78bfa;
+  --grad:linear-gradient(135deg,#7c9aff,#a78bfa);
+  --green:#3ddc97;
+  --green-bg:rgba(61,220,151,.12);
+  --yellow:#f5c76b;
+  --yellow-bg:rgba(245,199,107,.12);
+  --red:#ff6b7a;
+  --red-bg:rgba(255,107,122,.12);
+  --blue:#5eb1ff;
+  --blue-bg:rgba(94,177,255,.12);
+  --r-lg:16px;--r-md:12px;--r-sm:8px;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono","JetBrains Mono","Fira Code",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body{display:flex;min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;color:var(--text);background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:9px 12px;font-size:13px;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+::placeholder{color:var(--muted2)}
+
+/* ---------- Sidebar ---------- */
+.sidebar{width:236px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:11px;padding:20px 20px 18px}
+.brand-logo{width:34px;height:34px;border-radius:10px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#0a0d13;letter-spacing:-.5px}
+.brand-name{font-weight:700;font-size:16px;letter-spacing:-.2px}
+.brand-sub{font-size:10.5px;color:var(--muted2);margin-top:1px}
+.nav{padding:8px 12px;flex:1}
+.nav-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted2);padding:14px 10px 6px}
+.nav-item{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border-radius:var(--r-sm);color:var(--muted);font-size:13.5px;font-weight:500;transition:all .15s;text-align:left}
+.nav-item:hover{background:var(--panel2);color:var(--text)}
+.nav-item.active{background:var(--panel3);color:var(--text)}
+.nav-item.active .nav-ico{color:var(--accent)}
+.nav-ico{width:17px;height:17px;flex-shrink:0;color:var(--muted2)}
+.nav-item.active .nav-ico{color:var(--accent)}
+.nav-badge{margin-left:auto;font-size:10.5px;font-weight:600;background:var(--green-bg);color:var(--green);padding:2px 7px;border-radius:20px}
+.side-foot{padding:14px;border-top:1px solid var(--border)}
+.ks-status{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:var(--r-md);background:var(--panel);border:1px solid var(--border)}
+.ks-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.ks-text{font-size:11.5px;color:var(--muted)}
+.ks-text b{display:block;color:var(--text);font-size:12px;font-weight:600}
+
+/* ---------- Main ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:16px;padding:18px 32px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(10,13,19,.85);backdrop-filter:blur(12px);z-index:50}
+.page-title{font-size:17px;font-weight:700;letter-spacing:-.2px}
+.page-desc{font-size:12px;color:var(--muted2);margin-top:1px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.global-toggle{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);padding:8px 14px;border-radius:40px;font-size:12.5px;font-weight:600}
+.mode-seg{display:flex;background:var(--panel);border:1px solid var(--border);border-radius:40px;padding:3px}
+.mode-seg button{padding:6px 14px;border-radius:30px;font-size:12px;font-weight:600;color:var(--muted);transition:all .15s}
+.mode-seg button.on{background:var(--panel3);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.content{padding:26px 32px 60px;max-width:1140px;width:100%;margin:0 auto}
+.view{display:none}
+.view.on{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+/* ---------- Generic components ---------- */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px}
+.card-title{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card-sub{font-size:12px;color:var(--muted2);margin-top:3px}
+.grid{display:grid;gap:14px}
+.row{display:flex;align-items:center;gap:12px}
+.spread{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mt6{margin-top:6px}.mt14{margin-top:14px}.mt20{margin-top:20px}
+
+/* toggle switch */
+.tgl{position:relative;width:38px;height:22px;flex-shrink:0;cursor:pointer}
+.tgl input{opacity:0;width:0;height:0;position:absolute}
+.tgl .tk{position:absolute;inset:0;background:var(--panel3);border:1px solid var(--border2);border-radius:30px;transition:all .2s}
+.tgl .tk:before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#aab2c2;top:2px;left:2px;transition:all .2s}
+.tgl input:checked + .tk{background:var(--accent);border-color:var(--accent)}
+.tgl input:checked + .tk:before{transform:translateX(16px);background:#fff}
+.tgl.danger input:checked + .tk{background:var(--red);border-color:var(--red)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;background:var(--panel3);border:1px solid var(--border2);color:var(--text);font-size:12.5px;font-weight:600;padding:8px 15px;border-radius:10px;transition:all .15s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--grad);border:none;color:#0a0d13}
+.btn.primary:hover{filter:brightness(1.1);color:#0a0d13}
+.btn.sm{padding:6px 11px;font-size:11.5px;border-radius:8px}
+
+/* pills & badges */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:20px;font-variant-numeric:tabular-nums}
+.pill.g{background:var(--green-bg);color:var(--green)}
+.pill.y{background:var(--yellow-bg);color:var(--yellow)}
+.pill.r{background:var(--red-bg);color:var(--red)}
+.pill.b{background:var(--blue-bg);color:var(--blue)}
+.pill.dim{background:var(--panel3);color:var(--muted2)}
+.badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;border-radius:6px;background:var(--panel3);color:var(--muted);border:1px solid var(--border2)}
+.badge.hl{background:var(--blue-bg);color:var(--blue);border-color:transparent}
+.badge.violet{background:rgba(167,139,250,.13);color:var(--accent2);border-color:transparent}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.dot.g{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.y{background:var(--yellow)}
+.dot.r{background:var(--red);box-shadow:0 0 6px var(--red)}
+.dot.dim{background:var(--muted2)}
+
+/* ---------- Dashboard hero ---------- */
+.hero{background:linear-gradient(140deg,var(--panel2),var(--panel) 60%);border:1px solid var(--border2);border-radius:20px;padding:24px 26px;position:relative;overflow:hidden}
+.hero:before{content:"";position:absolute;top:-70px;right:-70px;width:260px;height:260px;background:radial-gradient(circle,rgba(124,154,255,.14),transparent 65%);pointer-events:none}
+.hero-status{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px}
+.hero-node{display:flex;align-items:baseline;gap:12px;margin-top:10px;flex-wrap:wrap}
+.hero-name{font-size:26px;font-weight:800;letter-spacing:-.5px}
+.hero-meta{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.hero-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px}
+.stat-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted2)}
+.stat-value{font-size:22px;font-weight:800;letter-spacing:-.4px;margin-top:6px;font-variant-numeric:tabular-nums}
+.stat-value small{font-size:12px;font-weight:600;color:var(--muted)}
+.stat-foot{font-size:11.5px;color:var(--muted2);margin-top:4px}
+.stat-foot b{font-weight:600}
+.up{color:var(--green)}.down{color:var(--red)}
+.duo{display:grid;grid-template-columns:1.55fr 1fr;gap:14px}
+.chain-strip{display:flex;align-items:center;gap:0;margin-top:14px;overflow-x:auto;padding-bottom:4px}
+.chain-node{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--border);padding:9px 14px;border-radius:12px;white-space:nowrap;font-size:12.5px;font-weight:600}
+.chain-node small{display:block;font-size:10.5px;color:var(--muted2);font-weight:500}
+.chain-arrow{color:var(--muted2);padding:0 8px;flex-shrink:0}
+.chain-node.dead{border-color:rgba(255,107,122,.35);background:rgba(255,107,122,.06)}
+.chain-node .pill{margin-left:4px}
+.log-line{display:flex;align-items:center;gap:10px;padding:8px 2px;font-size:12.5px;border-bottom:1px solid var(--border)}
+.log-line:last-child{border-bottom:none}
+.log-time{font-family:var(--mono);font-size:11px;color:var(--muted2);flex-shrink:0;width:52px}
+.log-msg{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-msg b{color:var(--text);font-weight:600}
+
+/* quick toggles card */
+.qt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid var(--border)}
+.qt:last-child{border-bottom:none}
+.qt-name{font-size:13px;font-weight:600}
+.qt-desc{font-size:11.5px;color:var(--muted2);margin-top:2px}
+.qt-name .badge{margin-left:7px;vertical-align:1px}
+
+/* ---------- Nodes ---------- */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.search{flex:1;min-width:180px;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:0 12px}
+.search input{border:none;background:none;padding:9px 0;width:100%}
+.sub-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:14px;overflow:hidden}
+.sub-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--panel2)}
+.sub-name{font-size:13.5px;font-weight:700}
+.sub-meta{font-size:11.5px;color:var(--muted2);margin-top:2px}
+.node{display:flex;align-items:center;gap:13px;padding:12px 18px;border-bottom:1px solid var(--border);transition:background .12s}
+.node:hover{background:var(--panel2)}
+.node:last-child{border-bottom:none}
+.node.off{opacity:.45}
+.node-radio{width:18px;height:18px;border-radius:50%;border:2px solid var(--muted2);flex-shrink:0;cursor:pointer;position:relative;transition:all .15s}
+.node-radio.sel{border-color:var(--accent)}
+.node-radio.sel:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--accent)}
+.node-flag{font-size:17px;width:24px;text-align:center;flex-shrink:0}
+.node-name{font-size:13px;font-weight:600}
+.node-sub{font-size:11px;color:var(--muted2);margin-top:1px}
+.node-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.node.hidden-by-filter{display:none}
+
+/* ---------- Routing rules ---------- */
+.rule{display:flex;align-items:center;gap:13px;padding:13px 18px;border-bottom:1px solid var(--border);transition:background .12s}
+.rule:hover{background:var(--panel2)}
+.rule:last-child{border-bottom:none}
+.rule.disabled{opacity:.5}
+.rule-grip{color:var(--muted2);cursor:grab;flex-shrink:0;font-size:13px;letter-spacing:2px;user-select:none}
+.rule-body{flex:1;min-width:0}
+.rule-name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rule-match{font-size:11.5px;color:var(--muted2);margin-top:3px;font-family:var(--mono)}
+.rule-act{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:8px;white-space:nowrap}
+.act-proxy{background:var(--blue-bg);color:var(--blue)}
+.act-direct{background:var(--green-bg);color:var(--green)}
+.act-block{background:var(--red-bg);color:var(--red)}
+.act-zapret{background:rgba(167,139,250,.13);color:var(--accent2)}
+.section-h{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:var(--muted2);margin:22px 4px 10px}
+.section-h:first-child{margin-top:0}
+.section-h .cnt{background:var(--panel3);padding:1px 7px;border-radius:10px;font-size:10.5px}
+.add-rule{display:flex;gap:10px;flex-wrap:wrap}
+.add-rule input{flex:2;min-width:160px}
+.add-rule select{flex:1;min-width:120px}
+.src-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.src-row:last-child{border-bottom:none}
+.src-url{font-family:var(--mono);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src-name{font-size:12.5px;font-weight:600}
+
+/* ---------- Fallback ---------- */
+.chain-big{display:flex;align-items:stretch;gap:0;margin:18px 0}
+.chain-card{flex:1;background:var(--panel2);border:1px solid var(--border2);border-radius:var(--r-lg);padding:16px;position:relative;min-width:0}
+.chain-card.primary{border-color:rgba(124,154,255,.45);background:linear-gradient(150deg,rgba(124,154,255,.08),var(--panel2) 55%)}
+.chain-card .role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted2)}
+.chain-card.primary .role{color:var(--accent)}
+.chain-card .cname{font-size:14.5px;font-weight:700;margin-top:7px;display:flex;align-items:center;gap:8px}
+.chain-card .cmeta{font-size:11.5px;color:var(--muted2);margin-top:5px}
+.chain-link{width:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted2);position:relative}
+.chain-link svg{width:26px;height:26px}
+.ks-hero{background:linear-gradient(140deg,rgba(255,107,122,.09),var(--panel) 55%);border:1px solid rgba(255,107,122,.3);border-radius:var(--r-lg);padding:20px}
+.ks-title{font-size:15px;font-weight:800;display:flex;align-items:center;gap:10px}
+.ks-title svg{color:var(--red)}
+.seg{display:flex;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:4px;gap:4px}
+.seg button{flex:1;padding:9px 10px;border-radius:9px;font-size:12.5px;font-weight:600;color:var(--muted);transition:all .15s;text-align:center}
+.seg button.on{background:var(--panel3);color:var(--text);box-shadow:0 1px 5px rgba(0,0,0,.4)}
+.seg button.on.danger-on{background:var(--red-bg);color:var(--red)}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid var(--border)}
+.opt:last-child{border-bottom:none}
+.demo-strip{display:flex;align-items:center;gap:12px;background:var(--yellow-bg);border:1px solid rgba(245,199,107,.3);border-radius:var(--r-md);padding:12px 16px;font-size:12.5px;color:var(--yellow);margin-top:18px}
+
+/* kill banner */
+.kill-banner{display:none;align-items:center;gap:14px;background:linear-gradient(120deg,rgba(255,107,122,.16),rgba(255,107,122,.05));border:1px solid rgba(255,107,122,.45);border-radius:var(--r-lg);padding:16px 20px;margin-bottom:18px;animation:fade .3s ease}
+.kill-banner.on{display:flex}
+.kill-banner .kb-ico{width:38px;height:38px;border-radius:11px;background:var(--red-bg);display:flex;align-items:center;justify-content:center;color:var(--red);flex-shrink:0}
+.kill-banner b{font-size:14px}
+.kill-banner p{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel3);border:1px solid var(--border2);padding:11px 20px;border-radius:12px;font-size:13px;font-weight:600;opacity:0;transition:all .3s;z-index:200;box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:none}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+
+.spark{width:100%;height:64px;display:block;margin-top:12px}
+@media(max-width:960px){.stat-grid{grid-template-columns:repeat(2,1fr)}.duo{grid-template-columns:1fr}.sidebar{width:70px}.brand-name,.brand-sub,.nav-item span,.nav-label,.ks-text{display:none}.chain-big{flex-direction:column}.chain-link{transform:rotate(90deg);height:36px;width:auto}}
+</style>
+</head>
+<body>
+
+<!-- ============ SIDEBAR ============ -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-logo">F</div>
+    <div>
+      <div class="brand-name">FreeNet</div>
+      <div class="brand-sub">Flint 2 · OpenWrt 24.10</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-label">Управление</div>
+    <button class="nav-item active" data-view="dashboard">
+      <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      <span>Дашборд</span>
+    </button>
+    <button class="nav-item" data-view="nodes">
+      <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+      <span>Пул нод</span>
+      <span class="nav-badge">8/12</span>
+    </button>
+    <button class="nav-item" data-view="routing">
+      <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7.5 7.5"/><path d="M8 21H3v-5"/><path d="M3 21l7.5-7.5"/><path d="M16 21h5v-5"/><path d="M21 21l-4.5-4.5"/></svg>
+      <span>Маршрутизация</span>
+    </button>
+    <button class="nav-item" data-view="fallback">
+      <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span>Фоллбэк</span>
+    </button>
+  </nav>
+  <div class="side-foot">
+    <div class="ks-status">
+      <div class="ks-dot" id="footDot"></div>
+      <div class="ks-text"><b id="footState">Защита активна</b><span id="footSub">uptime 4 дн 11 ч</span></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="page-title" id="pageTitle">Дашборд</div>
+      <div class="page-desc" id="pageDesc">Состояние туннеля и трафика</div>
+    </div>
+    <div class="topbar-right">
+      <div class="mode-seg" id="modeSeg">
+        <button class="on" data-mode="smart">Умный</button>
+        <button data-mode="global">Глобальный</button>
+        <button data-mode="off">Выключен</button>
+      </div>
+      <div class="global-toggle">
+        Прокси
+        <label class="tgl"><input type="checkbox" checked id="proxyToggle"><span class="tk"></span></label>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ======= DASHBOARD ======= -->
+    <section class="view on" id="view-dashboard">
+      <div class="kill-banner" id="killBanner">
+        <div class="kb-ico">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/></svg>
+        </div>
+        <div style="flex:1">
+          <b>Интернет отключён Kill Switch'ом</b>
+          <p>Все ноды недоступны — трафик перекрыт, чтобы ничего не утекло мимо туннеля.</p>
+        </div>
+        <button class="btn sm" id="killReset">Восстановить</button>
+      </div>
+
+      <div class="hero">
+        <div class="hero-status"><span class="dot g"></span><span id="heroStatusText">Подключено</span></div>
+        <div class="hero-node">
+          <div class="hero-name">🇳🇱 Amsterdam · VLESS</div>
+          <span class="badge hl">Reality</span>
+          <span class="badge">xray</span>
+        </div>
+        <div class="hero-meta">
+          <span class="pill g" id="heroPing">23 ms</span>
+          <span class="pill dim">jitter 3 ms</span>
+          <span class="pill dim">потери 0%</span>
+          <span style="font-size:12px;color:var(--muted2)">фоллбэк-цепочка из 3 нод · проверка каждые 10 с</span>
+        </div>
+        <div class="hero-actions">
+          <button class="btn primary" data-goto="nodes">Сменить ноду</button>
+          <button class="btn" data-goto="fallback">Настроить фоллбэк</button>
+          <button class="btn" id="reconnectBtn">Переподключить</button>
+        </div>
+      </div>
+
+      <div class="stat-grid mt14">
+        <div class="stat">
+          <div class="stat-label">Скорость</div>
+          <div class="stat-value"><span class="down">↓</span> 84.2 <small>Мбит/с</small></div>
+          <div class="stat-foot"><b class="up">↑ 12.7</b> Мбит/с отдача</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Трафик сегодня</div>
+          <div class="stat-value">14.6 <small>ГБ</small></div>
+          <div class="stat-foot">через прокси · 2.1 ГБ напрямую</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Ноды онлайн</div>
+          <div class="stat-value">8<small> / 12</small></div>
+          <div class="stat-foot">2 подписки · обновлены 12 мин назад</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Правил активно</div>
+          <div class="stat-value">6</div>
+          <div class="stat-foot">+ 2 отключено · режим «Умный»</div>
+        </div>
+      </div>
+
+      <div class="duo mt14">
+        <div class="card">
+          <div class="spread">
+            <div>
+              <div class="card-title">Пропускная способность</div>
+              <div class="card-sub">последние 60 секунд</div>
+            </div>
+            <span class="pill b">live</span>
+          </div>
+          <svg class="spark" viewBox="0 0 600 64" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#7c9aff" stop-opacity=".35"/>
+                <stop offset="100%" stop-color="#7c9aff" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path id="sparkFill" fill="url(#sg)" d=""/>
+            <path id="sparkLine" fill="none" stroke="#7c9aff" stroke-width="2" stroke-linecap="round" d=""/>
+          </svg>
+          <div class="card-title mt14" style="font-size:12.5px">Фоллбэк-цепочка</div>
+          <div class="chain-strip" id="dashChain">
+            <div class="chain-node"><span class="dot g"></span><div>🇳🇱 Amsterdam<small>основная · 23 ms</small></div></div>
+            <svg class="chain-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <div class="chain-node"><span class="dot g"></span><div>🇩🇪 Frankfurt<small>резерв 1 · 41 ms</small></div></div>
+            <svg class="chain-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <div class="chain-node"><span class="dot g"></span><div>🇫🇮 Helsinki<small>резерв 2 · 58 ms</small></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Быстрые переключатели</div>
+          <div class="qt">
+            <div><div class="qt-name">Kill Switch</div><div class="qt-desc">перекрыть интернет при падении всех нод</div></div>
+            <label class="tgl danger"><input type="checkbox" checked id="ksToggle"><span class="tk"></span></label>
+          </div>
+          <div class="qt">
+            <div><div class="qt-name">Оптимизация <span class="badge violet">zapret</span></div><div class="qt-desc">профили фрагментации для YouTube и пр.</div></div>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+          <div class="qt">
+            <div><div class="qt-name">Туннель для всех устройств</div><div class="qt-desc">прозрачный прокси на весь LAN</div></div>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+          <div class="qt">
+            <div><div class="qt-name">Автообновление подписок</div><div class="qt-desc">каждые 6 часов</div></div>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt14">
+        <div class="spread">
+          <div class="card-title">Последние события</div>
+          <button class="btn sm">Весь журнал</button>
+        </div>
+        <div class="mt6">
+          <div class="log-line"><span class="log-time">13:24:07</span><span class="dot g"></span><span class="log-msg">Нода <b>🇳🇱 Amsterdam</b> прошла проверку — 23 ms</span></div>
+          <div class="log-line"><span class="log-time">13:23:54</span><span class="dot g"></span><span class="log-msg">Обновлена подписка <b>Vlessify</b>: 34 ноды, +2 новые</span></div>
+          <div class="log-line"><span class="log-time">13:18:31</span><span class="dot y"></span><span class="log-msg">Нода <b>🇵🇱 Warsaw</b> не отвечает — исключена из цепочки до восстановления</span></div>
+          <div class="log-line"><span class="log-time">13:02:12</span><span class="dot g"></span><span class="log-msg">Применены правила маршрутизации: 6 активных</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= NODES ======= -->
+    <section class="view" id="view-nodes">
+      <div class="toolbar">
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5d6577" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input placeholder="Поиск по имени, стране, протоколу…" id="nodeSearch">
+        </div>
+        <button class="btn" id="pingAllBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+          Проверить все
+        </button>
+        <button class="btn">+ Подписка</button>
+        <button class="btn primary">+ Нода</button>
+      </div>
+
+      <div class="sub-card">
+        <div class="sub-head">
+          <div style="flex:1">
+            <div class="sub-name">✈️ Vlessify</div>
+            <div class="sub-meta">подписка · 6 нод · обновлено 12 мин назад · автообновление вкл</div>
+          </div>
+          <button class="btn sm">Обновить</button>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+        </div>
+        <div class="node" data-name="amsterdam vless reality nl нидерланды">
+          <div class="node-radio sel" title="Активная нода"></div>
+          <div class="node-flag">🇳🇱</div>
+          <div>
+            <div class="node-name">Amsterdam 01</div>
+            <div class="node-sub">VLESS + Reality · xray · 185.220.x.x</div>
+          </div>
+          <div class="node-right">
+            <span class="badge hl">Reality</span>
+            <span class="pill g ping" data-base="23">23 ms</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+        <div class="node" data-name="frankfurt hysteria2 de германия">
+          <div class="node-radio"></div>
+          <div class="node-flag">🇩🇪</div>
+          <div>
+            <div class="node-name">Frankfurt 02</div>
+            <div class="node-sub">Hysteria2 · sing-box · 45.139.x.x</div>
+          </div>
+          <div class="node-right">
+            <span class="badge">Hy2</span>
+            <span class="pill g ping" data-base="41">41 ms</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+        <div class="node" data-name="helsinki vless reality fi финляндия">
+          <div class="node-radio"></div>
+          <div class="node-flag">🇫🇮</div>
+          <div>
+            <div class="node-name">Helsinki 01</div>
+            <div class="node-sub">VLESS + Reality · xray · 95.216.x.x</div>
+          </div>
+          <div class="node-right">
+            <span class="badge hl">Reality</span>
+            <span class="pill g ping" data-base="58">58 ms</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+        <div class="node" data-name="warsaw trojan pl польша">
+          <div class="node-radio"></div>
+          <div class="node-flag">🇵🇱</div>
+          <div>
+            <div class="node-name">Warsaw 01</div>
+            <div class="node-sub">Trojan · sing-box · 77.55.x.x</div>
+          </div>
+          <div class="node-right">
+            <span class="badge">Trojan</span>
+            <span class="pill r">timeout</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+        <div class="node" data-name="stockholm wireguard se швеция">
+          <div class="node-radio"></div>
+          <div class="node-flag">🇸🇪</div>
+          <div>
+            <div class="node-name">Stockholm 03</div>
+            <div class="node-sub">WireGuard · ядерный · 194.68.x.x</div>
+          </div>
+          <div class="node-right">
+            <span class="badge">WG</span>
+            <span class="pill g ping" data-base="66">66 ms</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+        <div class="node off" data-name="paris shadowsocks fr франция">
+          <div class="node-radio"></div>
+          <div class="node-flag">🇫🇷</div>
+          <div>
+            <div class="node-name">Paris 01</div>
+            <div class="node-sub">Shadowsocks 2022 · sing-box · 51.159.x.x</div>
+          </div>
+          <div class="node-right">
+            <span class="badge">SS2022</span>
+            <span class="pill dim">выкл</span>
+            <label class="tgl"><input type="checkbox"><span class="tk"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="sub-card">
+        <div class="sub-head">
+          <div style="flex:1">
+            <div class="sub-name">🛡 Ручные ноды</div>
+            <div class="sub-meta">добавлены вручную · 2 ноды</div>
+          </div>
+        </div>
+        <div class="node" data-name="vps personal vless vision reality личный">
+          <div class="node-radio"></div>
+          <div class="node-flag">🖥️</div>
+          <div>
+            <div class="node-name">Мой VPS · VLESS Vision</div>
+            <div class="node-sub">VLESS + XTLS Vision + Reality · xray</div>
+          </div>
+          <div class="node-right">
+            <span class="badge hl">Reality</span>
+            <span class="pill g ping" data-base="37">37 ms</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+        <div class="node" data-name="backup tuic">
+          <div class="node-radio"></div>
+          <div class="node-flag">🖥️</div>
+          <div>
+            <div class="node-name">Запасной · TUIC v5</div>
+            <div class="node-sub">TUIC · sing-box</div>
+          </div>
+          <div class="node-right">
+            <span class="badge">TUIC</span>
+            <span class="pill y ping" data-base="132">132 ms</span>
+            <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= ROUTING ======= -->
+    <section class="view" id="view-routing">
+      <div class="section-h">Активные правила <span class="cnt">6</span></div>
+      <div class="sub-card">
+        <div class="rule">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Расширенный список сообщества <span class="badge">re:filter</span></div>
+            <div class="rule-match">список: refilter-domains · 148 204 домена · обновлён сегодня</div>
+          </div>
+          <span class="rule-act act-proxy">→ Прокси</span>
+        </div>
+        <div class="rule">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">YouTube, Discord, Meta <span class="badge violet">zapret</span></div>
+            <div class="rule-match">geosite: youtube, discord, meta · без прокси, только оптимизация</div>
+          </div>
+          <span class="rule-act act-zapret">⚡ Оптимизация</span>
+        </div>
+        <div class="rule">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Мой список</div>
+            <div class="rule-match">custom: my-domains · 12 доменов · добавлен вручную</div>
+          </div>
+          <span class="rule-act act-proxy">→ Прокси</span>
+        </div>
+        <div class="rule">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Российские сервисы</div>
+            <div class="rule-match">geosite: category-ru + geoip: ru</div>
+          </div>
+          <span class="rule-act act-direct">→ Напрямую</span>
+        </div>
+        <div class="rule">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Реклама и трекеры</div>
+            <div class="rule-match">geosite: category-ads-all</div>
+          </div>
+          <span class="rule-act act-block">✕ Блок</span>
+        </div>
+        <div class="rule">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Всё остальное <span class="badge">final</span></div>
+            <div class="rule-match">конечное правило · применяется последним</div>
+          </div>
+          <span class="rule-act act-proxy">→ Прокси</span>
+        </div>
+      </div>
+
+      <div class="section-h">Отключённые <span class="cnt">2</span></div>
+      <div class="sub-card">
+        <div class="rule disabled">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox"><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Торренты через отдельный VPN</div>
+            <div class="rule-match">порты 6881–6999, 51413 → WireGuard Stockholm</div>
+          </div>
+          <span class="rule-act act-proxy">→ WG</span>
+        </div>
+        <div class="rule disabled">
+          <span class="rule-grip">⠿</span>
+          <label class="tgl"><input type="checkbox"><span class="tk"></span></label>
+          <div class="rule-body">
+            <div class="rule-name">Игровая приставка — напрямую</div>
+            <div class="rule-match">устройство: PS5 · 192.168.8.214</div>
+          </div>
+          <span class="rule-act act-direct">→ Напрямую</span>
+        </div>
+      </div>
+
+      <div class="section-h">Добавить своё правило</div>
+      <div class="card">
+        <div class="add-rule">
+          <input placeholder="Домен, список доменов или IP — например: meduza.io, 203.0.113.0/24" id="newRuleInput">
+          <select id="newRuleAction">
+            <option>→ Прокси</option>
+            <option>→ Напрямую</option>
+            <option>⚡ Оптимизация</option>
+            <option>✕ Блок</option>
+          </select>
+          <button class="btn primary" id="addRuleBtn">Добавить</button>
+        </div>
+        <div class="card-sub mt6">Правила применяются сверху вниз. Перетаскивай за ⠿, чтобы менять приоритет.</div>
+      </div>
+
+      <div class="section-h">Источники списков</div>
+      <div class="card">
+        <div class="src-row">
+          <span class="dot g"></span>
+          <div style="flex:1;min-width:0">
+            <div class="src-name">re:filter — домены</div>
+            <div class="src-url">https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst</div>
+          </div>
+          <span class="pill dim">6 ч</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+        </div>
+        <div class="src-row">
+          <span class="dot g"></span>
+          <div style="flex:1;min-width:0">
+            <div class="src-name">v2ray rules-dat (geosite/geoip)</div>
+            <div class="src-url">https://github.com/Loyalsoldier/v2ray-rules-dat</div>
+          </div>
+          <span class="pill dim">24 ч</span>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+        </div>
+        <div class="add-rule mt14">
+          <input placeholder="URL своего списка правил…" id="newSrcInput">
+          <button class="btn" id="addSrcBtn">+ Добавить источник</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= FALLBACK ======= -->
+    <section class="view" id="view-fallback">
+      <div class="card">
+        <div class="spread">
+          <div>
+            <div class="card-title">Цепочка фоллбэка</div>
+            <div class="card-sub">если основная нода умирает — трафик мгновенно уходит на следующую живую</div>
+          </div>
+          <button class="btn sm" data-goto="nodes">Изменить состав</button>
+        </div>
+        <div class="chain-big" id="fbChain">
+          <div class="chain-card primary">
+            <div class="role">Основная</div>
+            <div class="cname">🇳🇱 Amsterdam <span class="pill g">23 ms</span></div>
+            <div class="cmeta">VLESS + Reality · проверка каждые 10 с<br>последняя: 3 с назад · <span style="color:var(--green)">жива</span></div>
+          </div>
+          <div class="chain-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <div class="chain-card">
+            <div class="role">Резерв 1</div>
+            <div class="cname">🇩🇪 Frankfurt <span class="pill g">41 ms</span></div>
+            <div class="cmeta">Hysteria2 · sing-box<br>последняя проверка: 5 с назад · <span style="color:var(--green)">жива</span></div>
+          </div>
+          <div class="chain-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <div class="chain-card">
+            <div class="role">Резерв 2</div>
+            <div class="cname">🇫🇮 Helsinki <span class="pill g">58 ms</span></div>
+            <div class="cmeta">VLESS + Reality · xray<br>последняя проверка: 8 с назад · <span style="color:var(--green)">жива</span></div>
+          </div>
+        </div>
+        <div class="opt">
+          <div><div class="qt-name">Метод проверки живости</div><div class="qt-desc">URL-test: реальный запрос через ноду, а не просто ping</div></div>
+          <select style="min-width:220px">
+            <option>https://www.gstatic.com/generate_204</option>
+            <option>http://cp.cloudflare.com/</option>
+            <option>Свой URL…</option>
+          </select>
+        </div>
+        <div class="opt">
+          <div><div class="qt-name">Переключаться после</div><div class="qt-desc">подряд неудачных проверок</div></div>
+          <div class="mode-seg"><button>1</button><button class="on">3</button><button>5</button></div>
+        </div>
+        <div class="opt">
+          <div><div class="qt-name">Возвращаться к основной автоматически</div><div class="qt-desc">когда она оживёт — с задержкой 60 с против флаппинга</div></div>
+          <label class="tgl"><input type="checkbox" checked><span class="tk"></span></label>
+        </div>
+      </div>
+
+      <div class="ks-hero mt14">
+        <div class="spread">
+          <div class="ks-title">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+            Kill Switch
+          </div>
+          <label class="tgl danger"><input type="checkbox" checked id="ksToggle2"><span class="tk"></span></label>
+        </div>
+        <div class="card-sub" style="margin-top:8px">Что делать, если умерли <b style="color:var(--text)">все</b> ноды в цепочке:</div>
+        <div class="seg mt14" id="ksModeSeg">
+          <button class="on danger-on" data-ks="kill">🔒 Перекрыть интернет</button>
+          <button data-ks="direct">⚠️ Пустить напрямую</button>
+          <button data-ks="nothing">🤷 Ничего</button>
+        </div>
+        <div class="card-sub mt14">«Перекрыть интернет» — ни один пакет не уйдёт мимо туннеля: провайдер не увидит, куда ты ходишь, даже пока VPN лежит.</div>
+      </div>
+
+      <div class="demo-strip">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+        <span style="flex:1">Демо-режим: посмотри, как система поведёт себя при обрыве</span>
+        <button class="btn sm" id="demoKillBtn">Симулировать падение всех нод</button>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---- toast ---- */
+  var toastEl = document.getElementById('toast'), toastT;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('on');
+    clearTimeout(toastT);
+    toastT = setTimeout(function(){ toastEl.classList.remove('on'); }, 2200);
+  }
+
+  /* ---- view switching ---- */
+  var titles = {
+    dashboard:['Дашборд','Состояние туннеля и трафика'],
+    nodes:['Пул нод','Подписки, ручные ноды, проверка задержки'],
+    routing:['Маршрутизация','Что куда идёт: прокси, напрямую, оптимизация, блок'],
+    fallback:['Фоллбэк и Kill Switch','Автовыбор, цепочка резервов, поведение при обрыве']
+  };
+  function goto(name){
+    document.querySelectorAll('.nav-item').forEach(function(b){
+      b.classList.toggle('active', b.dataset.view === name);
+    });
+    document.querySelectorAll('.view').forEach(function(v){
+      v.classList.toggle('on', v.id === 'view-' + name);
+    });
+    var t = titles[name];
+    document.getElementById('pageTitle').textContent = t[0];
+    document.getElementById('pageDesc').textContent = t[1];
+    window.scrollTo(0,0);
+  }
+  document.querySelectorAll('.nav-item[data-view]').forEach(function(b){
+    b.addEventListener('click', function(){ goto(b.dataset.view); });
+  });
+  document.querySelectorAll('[data-goto]').forEach(function(b){
+    b.addEventListener('click', function(){ goto(b.dataset.goto); });
+  });
+
+  /* ---- generic segmented controls ---- */
+  document.querySelectorAll('.mode-seg, .seg').forEach(function(seg){
+    if(seg.id === 'ksModeSeg') return;
+    seg.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      seg.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      if(seg.id === 'modeSeg'){
+        var m = b.dataset.mode;
+        toast(m === 'off' ? 'Прокси выключен — весь трафик идёт напрямую'
+            : m === 'global' ? 'Глобальный режим: весь трафик через туннель'
+            : 'Умный режим: по правилам маршрутизации');
+      }
+    });
+  });
+
+  /* ---- sparkline ---- */
+  var pts = [], N = 60;
+  for(var i = 0; i < N; i++) pts.push(30 + Math.random()*20);
+  function drawSpark(){
+    var w = 600, h = 64, max = 64, step = w/(N-1);
+    var d = 'M0 ' + (h - pts[0]/max*h);
+    for(var i = 1; i < N; i++){
+      var x = i*step, y = h - pts[i]/max*h;
+      d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    document.getElementById('sparkLine').setAttribute('d', d);
+    document.getElementById('sparkFill').setAttribute('d', d + ' L' + w + ' ' + h + ' L0 ' + h + ' Z');
+  }
+  drawSpark();
+  setInterval(function(){
+    pts.shift();
+    pts.push(Math.max(8, Math.min(60, pts[pts.length-1] + (Math.random()-0.5)*14)));
+    drawSpark();
+  }, 1000);
+
+  /* ---- node search ---- */
+  var search = document.getElementById('nodeSearch');
+  if(search) search.addEventListener('input', function(){
+    var q = search.value.trim().toLowerCase();
+    document.querySelectorAll('#view-nodes .node').forEach(function(n){
+      n.classList.toggle('hidden-by-filter', q && n.dataset.name.indexOf(q) === -1);
+    });
+  });
+
+  /* ---- ping all ---- */
+  var pingBtn = document.getElementById('pingAllBtn');
+  if(pingBtn) pingBtn.addEventListener('click', function(){
+    pingBtn.disabled = true;
+    toast('Проверяем ноды…');
+    document.querySelectorAll('.ping').forEach(function(p){
+      p.className = 'pill dim ping';
+      p.textContent = '…';
+      p.dataset.base = p.dataset.base || 50;
+    });
+    setTimeout(function(){
+      document.querySelectorAll('.ping').forEach(function(p){
+        var base = +p.dataset.base;
+        var v = Math.max(9, Math.round(base + (Math.random()-0.5)*16));
+        p.textContent = v + ' ms';
+        p.className = 'pill ping ' + (v < 90 ? 'g' : v < 180 ? 'y' : 'r');
+      });
+      var hero = document.querySelector('#view-nodes .node .ping');
+      if(hero) document.getElementById('heroPing').textContent = hero.textContent;
+      pingBtn.disabled = false;
+      toast('Готово: 7 нод живы, 1 не отвечает');
+    }, 1400);
+  });
+
+  /* ---- node selection ---- */
+  document.querySelectorAll('.node-radio').forEach(function(r){
+    r.addEventListener('click', function(){
+      document.querySelectorAll('.node-radio').forEach(function(x){ x.classList.remove('sel'); });
+      r.classList.add('sel');
+      var name = r.parentElement.querySelector('.node-name').textContent;
+      toast('Активная нода: ' + name);
+    });
+  });
+
+  /* ---- add rule / source ---- */
+  function bindAdd(btnId, inputId, okMsg){
+    var b = document.getElementById(btnId), i = document.getElementById(inputId);
+    if(!b) return;
+    b.addEventListener('click', function(){
+      if(!i.value.trim()){ toast('Сначала введи значение'); return; }
+      toast(okMsg + ': ' + i.value.trim());
+      i.value = '';
+    });
+  }
+  bindAdd('addRuleBtn','newRuleInput','Правило добавлено');
+  bindAdd('addSrcBtn','newSrcInput','Источник добавлен, забираем список');
+
+  /* ---- reconnect ---- */
+  document.getElementById('reconnectBtn').addEventListener('click', function(){
+    toast('Переподключаемся к Amsterdam…');
+    setTimeout(function(){ toast('Подключено · 24 ms'); }, 1500);
+  });
+
+  /* ---- kill switch mode ---- */
+  document.getElementById('ksModeSeg').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    this.querySelectorAll('button').forEach(function(x){ x.classList.remove('on','danger-on'); });
+    b.classList.add('on');
+    if(b.dataset.ks === 'kill') b.classList.add('danger-on');
+    toast(b.dataset.ks === 'kill' ? 'Kill Switch: при обрыве интернет будет перекрыт'
+        : b.dataset.ks === 'direct' ? 'Внимание: при обрыве трафик пойдёт напрямую через провайдера'
+        : 'При обрыве ничего не произойдёт');
+  });
+
+  /* ---- demo: total outage ---- */
+  var dead = false;
+  document.getElementById('demoKillBtn').addEventListener('click', function(){
+    if(dead) return;
+    dead = true;
+    document.getElementById('killBanner').classList.add('on');
+    document.getElementById('heroStatusText').textContent = 'Все ноды недоступны';
+    document.getElementById('heroStatusText').style.color = 'var(--red)';
+    document.querySelector('.hero-status .dot').className = 'dot r';
+    document.getElementById('heroPing').className = 'pill r';
+    document.getElementById('heroPing').textContent = 'timeout';
+    document.getElementById('footState').textContent = 'Kill Switch: блок';
+    document.getElementById('footDot').style.background = 'var(--red)';
+    document.getElementById('footDot').style.boxShadow = '0 0 8px var(--red)';
+    document.querySelectorAll('#fbChain .cmeta').forEach(function(m){
+      m.innerHTML = m.innerHTML.replace(/жива/g, '<span style="color:var(--red)">не отвечает</span>');
+    });
+    document.querySelectorAll('#fbChain .pill').forEach(function(p){
+      p.className = 'pill r'; p.textContent = 'timeout';
+    });
+    document.querySelectorAll('#dashChain .dot').forEach(function(d){ d.className = 'dot r'; });
+    goto('dashboard');
+    toast('Симуляция: все ноды умерли — Kill Switch перекрыл интернет');
+  });
+  document.getElementById('killReset').addEventListener('click', function(){
+    dead = false;
+    document.getElementById('killBanner').classList.remove('on');
+    document.getElementById('heroStatusText').textContent = 'Подключено';
+    document.getElementById('heroStatusText').style.color = '';
+    document.querySelector('.hero-status .dot').className = 'dot g';
+    document.getElementById('heroPing').className = 'pill g';
+    document.getElementById('heroPing').textContent = '23 ms';
+    document.getElementById('footState').textContent = 'Защита активна';
+    document.getElementById('footDot').style.background = 'var(--green)';
+    document.getElementById('footDot').style.boxShadow = '0 0 8px var(--green)';
+    toast('Ноды ожили — туннель восстановлен');
+  });
+
+  /* ---- footer clock-ish flavor ---- */
+  document.querySelectorAll('.tgl input').forEach(function(t){
+    t.addEventListener('change', function(){
+      if(t.id === 'ksToggle' || t.id === 'ksToggle2'){
+        var other = document.getElementById(t.id === 'ksToggle' ? 'ksToggle2' : 'ksToggle');
+        if(other) other.checked = t.checked;
+        toast(t.checked ? 'Kill Switch включён' : 'Kill Switch выключен — при обрыве возможны утечки');
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

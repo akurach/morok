@@ -1,0 +1,12 @@
+{
+  "component": "xray",
+  "version": "26.9.9",
+  "channel": "stable",
+  "updated_at": "2026-10-21",
+  "arch": {
+    "aarch64_cortex-a53": {
+      "url": "https://github.com/akurach/morok/releases/download/v0.2.0/xray-26.9.9_aarch64_cortex-a53",
+      "sha256": "c1defe42b6db958a97c5e049a02a00a4baaedaca7b51c1c229f0830e288acef5"
+    }
+  }
+}

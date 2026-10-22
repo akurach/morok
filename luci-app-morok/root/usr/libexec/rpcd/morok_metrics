@@ -1,0 +1,117 @@
+#!/usr/bin/ucode
+// Morok metrics rpcd backend — ubus-объект "morok_metrics" (Wave 3.5).
+// Legacy exec-протокол (урок 3 ТЗ): `morok_metrics list` / `morok_metrics call <method>`.
+// Читает /var/etc/morok/metrics.json (пишет демон metrics.sh), лениво поднимает
+// демон при первом обращении. НЕ трогает основной плагин morok.
+
+'use strict';
+
+import * as fs from 'fs';
+
+const DIR = '/var/etc/morok';
+const OUT = DIR + '/metrics.json';
+const COLLECTOR = '/usr/share/morok/metrics.sh';
+
+function safe_json(s) {
+	let r = null;
+	try { r = json(s); } catch (e) { r = null; }
+	return r;
+}
+
+function read_metrics() {
+	let s = fs.readfile(OUT);
+	if (!s) return null;
+	return safe_json(s);
+}
+
+function collector_running() {
+	// rc=0 → lock свободен → демон НЕ запущен; rc!=0 → lock держит демон
+	let p = fs.popen('flock -n /var/etc/morok/metrics.lock -c true 2>/dev/null; echo $?');
+	if (!p) return false;
+	let rc = p.read('line');
+	p.close();
+	return rc != null && rtrim(rc) != '0';
+}
+
+function ensure_collector() {
+	if (fs.stat(COLLECTOR) == null) return;
+	if (collector_running()) return;
+	// detach: stdin/stdout/stderr в /dev/null, чтобы popen не вис (урок 6/9)
+	fs.popen('sh -c "' + COLLECTOR + ' </dev/null >/dev/null 2>&1 &"');
+}
+
+function num(v) { return (type(v) == 'int' || type(v) == 'double') ? v : 0; }
+
+// uptime sing-box (сек) по /proc/<pid> — начало процесса относительно boot
+function singbox_uptime() {
+	let p = fs.popen('pidof sing-box');
+	let pid = p ? rtrim(p.read('line') || '') : '';
+	if (p) p.close();
+	if (pid == '') return null;
+	pid = split(pid, ' ')[0];
+	let up = split(fs.readfile('/proc/uptime') || '0', ' ')[0];
+	let stat = fs.readfile('/proc/' + pid + '/stat');
+	if (!stat) return null;
+	// starttime — 22-е поле; comm в скобках может содержать пробелы → режем по ')'
+	let rparen = rindex(stat, ')');
+	if (rparen < 0) return null;
+	let fields = split(substr(stat, rparen + 2), ' ');
+	// после ')' поле 3 (state) — индекс 0 → starttime (поле 22) — индекс 19
+	let start_ticks = num(int(fields[19]));
+	let hz = 100;
+	let boot_relative = start_ticks / hz;
+	let uptime = num(int(up));
+	return uptime > boot_relative ? uptime - boot_relative : null;
+}
+
+let methods = {
+	read: function(a) {
+		ensure_collector();
+		let m = read_metrics();
+		if (!m) {
+			return { ok: true, empty: true, note: 'метрики ещё не собраны — сборщик запущен, данные появятся через минуту' };
+		}
+		m.ok = true;
+		m.singbox_uptime = singbox_uptime();
+		return m;
+	},
+
+	reset: function(a) {
+		let m = read_metrics() || {};
+		let fresh = {
+			started: time(),
+			updated: time(),
+			interval: num(m.interval) || 60,
+			clash: m.clash == true,
+			samples: [],
+			nodes: {},
+			rules: {}
+		};
+		fs.writefile(OUT + '.tmp', sprintf('%J', fresh));
+		fs.rename(OUT + '.tmp', OUT);
+		return { ok: true };
+	}
+};
+
+let schema = {
+	read: {},
+	reset: {}
+};
+
+let cmd = length(ARGV) > 0 ? ARGV[0] : '';
+
+if (cmd == 'list') {
+	printf('%J\n', schema);
+} else if (cmd == 'call') {
+	let method = length(ARGV) > 1 ? ARGV[1] : '';
+	let raw = fs.stdin ? fs.stdin.read('all') : fs.open('/dev/stdin').read('all');
+	let args = (raw && raw != '') ? safe_json(raw) : {};
+	if (type(args) != 'object') args = {};
+	let fn = methods[method];
+	if (fn) {
+		let res = fn(args);
+		printf('%J\n', res != null ? res : {});
+	} else {
+		printf('%J\n', { ok: false, error: 'unknown method: ' + method });
+	}
+}

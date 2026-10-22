@@ -1,0 +1,15 @@
+# Вендорные бинари luci-app-morok
+# Формат: компонент | версия | источник | дата добавления | sha256 | примечание
+# Архитектура каталога = OpenWrt DISTRIB_ARCH.
+
+## aarch64_cortex-a53
+
+sing-box | 1.14.0 | взят с боевого роутера GL-MT6000 (/usr/bin/sing-box), проверен в Wave 0 | 2026-10-20 | 5f4d9ef9436b36a6cb9db8831833264c11fe4cab1622cec465c0acfd3abfffac | ELF aarch64, statically linked, stripped; go1.26.7 linux/arm64, tags: gvisor,quic,wireguard,utls,clash_api,... ; CGO enabled; upstream revision 0b8995879f29a9b98ee027bc17b75e101445b238 (SagerNet/sing-box)
+
+nfqws2 | 1.0.5.2 (zapret2) | https://github.com/bol-van/zapret2/releases/download/v1.0.5.2/zapret2-v1.0.5.2-openwrt-embedded.tar.gz (binaries/linux-arm64/nfqws2) | 2026-10-20 | 8788877cd4b3140357dd10524832ca508d47055efae072bc426b887bfea253a7 | ELF aarch64, statically linked; хеш архива сверен с sha256sum.txt релиза: 9a2b08ec8c4b40f908e55684ea29d40b2316a1f2eebb08ea6afcb1e5c9c0fc89
+
+xray | 26.9.9 (XTLS/Xray-core) | https://github.com/XTLS/Xray-core/releases/download/v26.9.9/Xray-linux-arm64-v8a.zip | 2026-10-21 | c1defe42b6db958a97c5e049a02a00a4baaedaca7b51c1c229f0830e288acef5 | ELF aarch64, statically linked, stripped; go1.27.1 linux/arm64; sha256 zip-архива сверен с .dgst релиза: 3e38d72dfc5eb65c91df0e5583e9b6676c32232041da47de6ae73946b526d66c; бинарь идентичен /usr/bin/xray на боевом роутере. geoip.dat/geosite.dat НЕ вендорим (28 МБ): xray ищет их в /usr/share/xray и /usr/share/v2ray, на боевом роутере они есть от системной установки; упаковка в ipk — открытый вопрос трека D (см. W3_NOTES_C.md)
+
+# Правила:
+# - Обновление бинаря = новая строка-запись здесь + пересборка ipk.
+# - Хеши пересчитывать: shasum -a 256 <file>

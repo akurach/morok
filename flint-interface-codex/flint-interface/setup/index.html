@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f4f0" />
+    <title>Линия — первая настройка</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="../index.html" aria-label="Линия, на главную">
+          <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M5 24 14 7l5 12 8-11"/><circle cx="5" cy="24" r="2"/><circle cx="27" cy="8" r="2"/></svg>
+          <span>Линия</span>
+        </a>
+        <p class="demo-label">Интерактивный макет · данные демонстрационные</p>
+        <a class="quiet-link" href="../index.html">К обзору</a>
+      </header>
+
+      <div class="setup-grid">
+        <aside class="step-rail" aria-label="Этапы настройки">
+          <p class="eyebrow">ПЕРВАЯ НАСТРОЙКА</p>
+          <ol class="step-list">
+            <li class="step is-current" data-rail-step="1"><span>01</span><strong>Подключение</strong><small>Импорт данных</small></li>
+            <li class="step" data-rail-step="2"><span>02</span><strong>Маршруты</strong><small>Основной и резерв</small></li>
+            <li class="step" data-rail-step="3"><span>03</span><strong>Правила</strong><small>Куда идёт трафик</small></li>
+            <li class="step" data-rail-step="4"><span>04</span><strong>Проверка</strong><small>Итог макета</small></li>
+          </ol>
+          <p class="rail-note">Можно вернуться к любому завершённому шагу. Данные подключения никуда не отправляются.</p>
+        </aside>
+
+        <section class="form-panel" aria-live="polite">
+          <form id="setup-form" novalidate>
+            <section class="flow-step" data-step="1">
+              <p class="eyebrow">ШАГ 01 / 04</p>
+              <h1>Добавим первое подключение</h1>
+              <p class="lead">Вставьте ссылку конфигурации или выберите файл. В этом макете содержимое остаётся только в вашем браузере.</p>
+
+              <div class="demo-callout">
+                <div class="icon-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 7v6m0 4h.01M5.5 20h13a2 2 0 0 0 1.73-3L13.73 5a2 2 0 0 0-3.46 0L3.77 17A2 2 0 0 0 5.5 20Z"/></svg></div>
+                <div><strong>Безопасный режим макета</strong><p>Ссылка не проверяется и не сохраняется. Для демонстрации можно подставить пример.</p></div>
+              </div>
+
+              <label class="field-label" for="connection-link">Ссылка подключения</label>
+              <textarea id="connection-link" name="connection-link" rows="4" autocomplete="off" spellcheck="false" placeholder="Например: vless://… или https://config.example/profile"></textarea>
+              <p class="field-help">Поддерживаются ссылки или содержимое конфигурации. Никакие ключи и адреса не попадут в память макета.</p>
+              <p id="connection-error" class="field-error" role="alert"></p>
+
+              <div class="import-actions">
+                <button class="button secondary" type="button" id="fill-demo">Подставить пример</button>
+                <label class="file-button" for="config-file"><span>Выбрать файл</span><input id="config-file" type="file" accept=".conf,.json,.txt,.yaml,.yml" /></label>
+                <span id="file-status" class="file-status">Файл не выбран</span>
+              </div>
+            </section>
+
+            <section class="flow-step" data-step="2" hidden>
+              <p class="eyebrow">ШАГ 02 / 04</p>
+              <h1>Задайте порядок маршрутов</h1>
+              <p class="lead">Основной маршрут используется первым. Резерв включается, если проверка связи основного не проходит.</p>
+              <div class="route-stack">
+                <fieldset>
+                  <legend>Основной маршрут</legend>
+                  <label class="route-option"><input type="radio" name="primary" value="moscow" checked /><span class="route-mark"><b>М</b></span><span><strong>Москва · быстрый</strong><small>WireGuard · VPN-маршрут</small></span></label>
+                  <label class="route-option"><input type="radio" name="primary" value="helsinki" /><span class="route-mark"><b>Х</b></span><span><strong>Хельсинки · устойчивый</strong><small>VLESS · прокси-маршрут</small></span></label>
+                  <label class="route-option"><input type="radio" name="primary" value="frankfurt" /><span class="route-mark"><b>Ф</b></span><span><strong>Франкфурт · спокойный</strong><small>Shadowsocks · прокси-маршрут</small></span></label>
+                </fieldset>
+                <fieldset>
+                  <legend>Резервный маршрут</legend>
+                  <label class="route-option"><input type="radio" name="backup" value="helsinki" checked /><span class="route-mark"><b>Х</b></span><span><strong>Хельсинки · устойчивый</strong><small>VLESS · прокси-маршрут</small></span></label>
+                  <label class="route-option"><input type="radio" name="backup" value="moscow" /><span class="route-mark"><b>М</b></span><span><strong>Москва · быстрый</strong><small>WireGuard · VPN-маршрут</small></span></label>
+                  <label class="route-option"><input type="radio" name="backup" value="frankfurt" /><span class="route-mark"><b>Ф</b></span><span><strong>Франкфурт · спокойный</strong><small>Shadowsocks · прокси-маршрут</small></span></label>
+                </fieldset>
+              </div>
+              <p id="route-error" class="field-error" role="alert"></p>
+            </section>
+
+            <section class="flow-step" data-step="3" hidden>
+              <p class="eyebrow">ШАГ 03 / 04</p>
+              <h1>Определите правила трафика</h1>
+              <p class="lead">Обычные сервисы останутся на прямом соединении. Выберите, как направлять сервисы, которым нужен иной маршрут.</p>
+              <fieldset class="choice-group">
+                <legend>Сервисы с выбранным маршрутом</legend>
+                <label class="choice-card"><input type="radio" name="policy" value="auto" checked /><span><strong>Выбирать автоматически</strong><small>Линия направит только известные сервисы через выбранный маршрут.</small></span></label>
+                <label class="choice-card"><input type="radio" name="policy" value="all" /><span><strong>Направлять всю сеть</strong><small>Все устройства и сервисы используют выбранный маршрут.</small></span></label>
+              </fieldset>
+              <fieldset class="choice-group failure-group">
+                <legend>Если оба маршрута недоступны</legend>
+                <label class="choice-card"><input type="radio" name="failure" value="pause" checked /><span><strong>Приостановить выбранные сервисы</strong><small>Остальной трафик продолжит идти напрямую. Это безопаснее, чем незаметно изменить правило.</small></span></label>
+                <label class="choice-card"><input type="radio" name="failure" value="direct" /><span><strong>Направить всё напрямую</strong><small>Продолжать работу без маршрута. Подходит, если доступ важнее выбранного правила.</small></span></label>
+              </fieldset>
+            </section>
+
+            <section class="flow-step" data-step="4" hidden>
+              <p class="eyebrow">ШАГ 04 / 04</p>
+              <h1>Проверим выбранную схему</h1>
+              <p class="lead">Это имитация проверки: она показывает, как будет выглядеть выбранное поведение, но не проверяет интернет или роутер.</p>
+              <div id="checks" class="checks" aria-live="polite"></div>
+              <div id="summary" class="summary-card" hidden></div>
+            </section>
+
+            <div class="form-actions">
+              <button id="back-button" class="button secondary" type="button" hidden>Назад</button>
+              <button id="next-button" class="button primary" type="button">Продолжить</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="preview-panel" aria-label="Предпросмотр маршрута">
+          <p class="eyebrow">КАК РАБОТАЕТ СХЕМА</p>
+          <div class="path-preview" id="path-preview">
+            <div class="path-node home"><span class="node-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z"/><path d="M9 21v-6h6v6"/></svg></span><div><strong>Домашняя сеть</strong><small>Flint 2</small></div></div>
+            <span class="path-line"></span>
+            <div class="path-node direct"><span class="node-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 0 1 0 16M12 4a12 12 0 0 0 0 16"/></svg></span><div><strong>Обычные сервисы</strong><small>Напрямую</small></div></div>
+            <span class="path-line branch"></span>
+            <div class="path-node selected"><span class="node-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg></span><div><strong id="preview-route">Москва · быстрый</strong><small id="preview-policy">Выбранные сервисы</small></div></div>
+            <span class="path-line"></span>
+            <div class="path-node internet"><span class="node-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 6.2h12.8M5.6 17.8h12.8"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>Интернет</strong><small>По выбранному правилу</small></div></div>
+          </div>
+          <p class="preview-note">Маршрут можно изменить позже. Макет не применяет схему и не управляет устройствами.</p>
+        </aside>
+      </div>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,170 @@
+#!/bin/sh /etc/rc.common
+# Morok — init для OpenWrt (procd).
+# Порядок: UCI -> генерация sing-box.json -> nft-правила -> sing-box
+#          -> per-device nft-сеты -> движок оптимизации -> guardian -> cron.
+# Оптимизация доставки (zapret2/nfqws2) — отдельный демон, управляется
+# antidpi.sh; здесь только стыкуемся.
+
+START=95
+STOP=10
+USE_PROCD=1
+
+CONF=morok
+RUN_DIR=/var/etc/morok
+# вендорные бинари из нашего пакета (ТЗ §3: всё критичное везём с собой);
+# /usr/bin/* — фоллбэк для dev-стендов, где пакет бинарей не ставили
+BIN=/usr/lib/morok/bin/sing-box
+[ -x "$BIN" ] || BIN=/usr/bin/sing-box
+XRAY_BIN=/usr/lib/morok/bin/xray
+[ -x "$XRAY_BIN" ] || XRAY_BIN=/usr/bin/xray
+
+# engine: sing-box (default) | xray (Wave 3.2 — xhttp и прочие Xray-only)
+engine() {
+	local e
+	config_get e globals engine sing-box
+	case "$e" in
+		xray) echo xray ;;
+		*) echo sing-box ;;
+	esac
+}
+
+nft_up() {
+	# прозрачный прокси: tproxy для TCP/UDP LAN-трафика
+	[ "$(uci -q get $CONF.globals.transparent)" = "1" ] || return 0
+	# policy routing: tproxy-пакеты с mark 0x1 заворачиваем в lo —
+	# без этого mark ставится, но пакеты до сокета не доходят
+	ip rule add fwmark 0x1/0x1 lookup 100 pref 100 2>/dev/null
+	ip route add local 0.0.0.0/0 dev lo table 100 2>/dev/null
+	nft -f /usr/share/morok/morok.nft 2>/dev/null || \
+		logger -t morok "nft: правила уже применены или ошибка — проверь 'nft list table inet morok'"
+	# per-device: MAC-и устройств с route=direct — мимо tproxy
+	/usr/share/morok/device_routes.sh
+}
+
+nft_down() {
+	nft delete table inet morok 2>/dev/null
+	ip rule del fwmark 0x1/0x1 lookup 100 pref 100 2>/dev/null
+	ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null
+}
+
+ensure_cron() {
+	# почасовой авто-режим: обновляет источники, у которых вышел
+	# update_interval, и .srs раз в сутки (см. ruleset_update.sh)
+	# + подписки с истёкшим update_interval (subscribe.sh auto, Wave 2)
+	mkdir -p /etc/crontabs
+	local marker="/usr/share/morok/ruleset_update.sh auto"
+	if ! grep -qsF "$marker" /etc/crontabs/root 2>/dev/null; then
+		echo "17 * * * * $marker >/dev/null 2>&1" >> /etc/crontabs/root
+		/etc/init.d/cron restart >/dev/null 2>&1
+	fi
+	marker="/usr/share/morok/subscribe.sh auto"
+	if ! grep -qsF "$marker" /etc/crontabs/root 2>/dev/null; then
+		echo "41 * * * * $marker >/dev/null 2>&1" >> /etc/crontabs/root
+		/etc/init.d/cron restart >/dev/null 2>&1
+	fi
+}
+
+start_service() {
+	local enabled
+	config_load $CONF
+	config_get enabled globals enabled 0
+	[ "$enabled" = "1" ] || { echo "morok выключен (globals.enabled=0)"; return 0; }
+
+	mkdir -p $RUN_DIR/lists /tmp/log
+
+	# AmneziaWG (Wave 3.1): системные интерфейсы awg-* для нод type=awg.
+	# Без kmod-amneziawg — ошибка в лог, сервис не падает.
+	/usr/share/morok/awg.sh start >/dev/null 2>&1 || true
+
+	local eng
+	eng=$(engine)
+	if [ "$eng" = "xray" ]; then
+		# xray ищет geo*.dat рядом с бинарём и в /usr/share/xray, но НЕ в
+		# /usr/share/v2ray — собираем симлинки на найденные dat в tmpfs
+		# и указываем каталог через XRAY_LOCATION_ASSET
+		GEO_DIR=$RUN_DIR/geo
+		mkdir -p $GEO_DIR
+		for n in geoip geosite; do
+			for d in /usr/share/xray /usr/share/v2ray /usr/lib/morok/geo; do
+				[ -f "$d/$n.dat" ] && { ln -sf "$d/$n.dat" "$GEO_DIR/$n.dat"; break; }
+			done
+		done
+		ucode /usr/share/morok/xray_gen.uc || {
+			logger -t morok "генерация xray-конфига провалилась"
+			return 1
+		}
+		XRAY_LOCATION_ASSET=$GEO_DIR $XRAY_BIN run -test -config $RUN_DIR/xray.json || {
+			logger -t morok "xray -test: конфиг невалиден, не стартую"
+			return 1
+		}
+		nft_up
+		procd_open_instance morok
+		procd_set_param command $XRAY_BIN run -config $RUN_DIR/xray.json
+		procd_set_param env XRAY_LOCATION_ASSET=$GEO_DIR
+		procd_set_param respawn 3600 5 5
+		procd_set_param stdout 1
+		procd_set_param stderr 1
+		procd_set_param file $RUN_DIR/xray.json
+		procd_close_instance
+	else
+		ucode /usr/share/morok/gen_config.uc || {
+			logger -t morok "генерация конфига провалилась"
+			return 1
+		}
+
+		$BIN check -c $RUN_DIR/sing-box.json || {
+			logger -t morok "sing-box check: конфиг невалиден, не стартую"
+			return 1
+		}
+
+		nft_up
+
+		procd_open_instance morok
+		procd_set_param command $BIN run -c $RUN_DIR/sing-box.json
+		procd_set_param respawn 3600 5 5
+		procd_set_param stdout 1
+		procd_set_param stderr 1
+		procd_set_param file $RUN_DIR/sing-box.json
+		procd_close_instance
+	fi
+
+	# Фоновые демоны: 1000>&- — закрываем procd-lock fd, иначе демон
+	# наследует flock и /etc/init.d/morok stop|start|restart виснет.
+
+	# движок оптимизации доставки (nfqws2). При отсутствии бинаря — warning
+	# в лог, сервис не падает (см. antidpi.sh).
+	[ "$(uci -q get $CONF.globals.antidpi)" = "1" ] && \
+		/usr/share/morok/antidpi.sh start 1000>&- >/dev/null 2>&1
+
+	# сторож адаптивных правил оптимизации
+	[ "$(uci -q get $CONF.antidpi.adaptive)" = "1" ] && \
+		/usr/share/morok/guardian.sh start 1000>&- >/dev/null 2>&1
+
+	ensure_cron
+
+	# tmpfs пуст после ребута — подтягиваем списки/геосеты в фоне,
+	# пока их нет, source_list-правила просто пропускаются (gen_config)
+	[ "$(ls $RUN_DIR/lists/*.json 2>/dev/null)" ] || \
+		( /usr/share/morok/ruleset_update.sh auto >/dev/null 2>&1 ) 1000>&- 9>&- &
+}
+
+stop_service() {
+	/usr/share/morok/guardian.sh stop 2>/dev/null
+	/usr/share/morok/antidpi.sh stop 2>/dev/null
+	/usr/share/morok/awg.sh stop 2>/dev/null
+	nft_down
+}
+
+service_triggers() {
+	procd_add_reload_trigger $CONF
+}
+
+reload_service() {
+	# сериализуем reload-ы: два подряд (UI дёрнул несколько методов)
+	# иначе гонятся gen_config и sing-box check по одному файлу
+	exec 9>$RUN_DIR/.reload.lock
+	flock -w 60 9 || logger -t morok "reload: lock не дождался — продолжаю без него"
+	# горячее применение: перегенерация + перезапуск sing-box
+	stop
+	start
+}

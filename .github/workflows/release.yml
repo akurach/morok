@@ -1,0 +1,98 @@
+name: Release
+
+# Релизный конвейер Морок.
+# Триггер — тег v* (напр. v0.2.0, должен совпадать с PKG_VERSION в Makefile).
+# Шаги: сборка ipk (opkg, OpenWrt ≤24.x) + apk (apk v3, OpenWrt 25+,
+# через docker — см. build/build.sh), sha256-суммы, GitHub Release с
+# ассетами (пакеты + вендорные бинари), генерация и коммит манифестов
+# канала channel/*.json (раздаются через jsdelivr — канал по умолчанию
+# для РФ, где raw.githubusercontent недоступен).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REPO: akurach/morok
+  ARCH: aarch64_cortex-a53
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Зависимости сборки (bsdtar для ipk)
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
+      - name: Сборка ipk + apk
+        run: ./build/build.sh "$ARCH" --apk
+
+      - name: sha256-суммы пакетов
+        run: |
+          cd build/out
+          shasum -a 256 *.ipk *.apk > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Создание GitHub Release с ассетами
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          assets=(build/out/*.ipk build/out/*.apk build/out/sha256sums.txt)
+          # вендорные бинари — отдельными ассетами <name>-<ver>_<arch>
+          # (канал обновления бинарей, bin_update.sh)
+          for bin in luci-app-morok/binaries/"$ARCH"/*; do
+            name="$(basename "$bin")"
+            case "$name" in README*) continue ;; esac
+            ver="$(awk -F'|' -v n="$name" '$1 ~ "^[[:space:]]*"n"[[:space:]]*$" { gsub(/^[ \t]+|[ \t]+$/, "", $2); split($2, a, /[ \t]/); print a[1]; exit }' luci-app-morok/binaries/VERSIONS)"
+            [ -n "$ver" ] || { echo "нет версии для $name в binaries/VERSIONS" >&2; exit 1; }
+            cp "$bin" "build/out/${name}-${ver}_${ARCH}"
+            assets+=("build/out/${name}-${ver}_${ARCH}")
+          done
+          # идемпотентно: релиз мог быть создан вручную (первый релиз)
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$REPO" --clobber "${assets[@]}"
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "Морок $VERSION" \
+              --generate-notes \
+              "${assets[@]}"
+          fi
+
+      - name: Генерация манифестов канала
+        run: ./scripts/make_channel.sh "${GITHUB_REF_NAME}" "$REPO"
+
+      - name: Коммит манифестов в main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          git add channel/
+          if git diff --cached --quiet; then
+            echo "манифесты не изменились"
+          else
+            git commit -m "channel: манифесты релиза ${GITHUB_REF_NAME} [skip ci]"
+            git push origin main
+          fi
+
+      - name: Сброс кэша jsdelivr для манифестов
+        run: |
+          for f in channel/latest.env channel/app.json channel/binaries.json channel/bin/*.json; do
+            curl -fsS "https://purge.jsdelivr.net/gh/$REPO@main/$f" >/dev/null || true
+          done
+          echo "jsdelivr purge запрошен"

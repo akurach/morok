@@ -1,0 +1,113 @@
+{
+	"admin/services/morok": {
+		"title": "Морок",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "morok/dashboard"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ],
+			"uci": { "morok": true }
+		}
+	},
+	"admin/services/morok/nodes": {
+		"title": "Пул нод",
+		"order": 51,
+		"action": {
+			"type": "view",
+			"path": "morok/nodes"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/routing": {
+		"title": "Маршрутизация",
+		"order": 52,
+		"action": {
+			"type": "view",
+			"path": "morok/routing"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/market": {
+		"title": "Маркет",
+		"order": 53,
+		"action": {
+			"type": "view",
+			"path": "morok/market"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/devices": {
+		"title": "Устройства",
+		"order": 54,
+		"action": {
+			"type": "view",
+			"path": "morok/devices"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/antidpi": {
+		"title": "Оптимизация",
+		"order": 55,
+		"action": {
+			"type": "view",
+			"path": "morok/antidpi"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/fallback": {
+		"title": "Фоллбэк",
+		"order": 56,
+		"action": {
+			"type": "view",
+			"path": "morok/fallback"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/log": {
+		"title": "Журнал",
+		"order": 57,
+		"action": {
+			"type": "view",
+			"path": "morok/log"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/diag": {
+		"title": "Диагностика",
+		"order": 58,
+		"action": {
+			"type": "view",
+			"path": "morok/diag"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	},
+	"admin/services/morok/components": {
+		"title": "Компоненты",
+		"order": 59,
+		"action": {
+			"type": "view",
+			"path": "morok/components"
+		},
+		"depends": {
+			"acl": [ "luci-app-morok" ]
+		}
+	}
+}

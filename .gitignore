@@ -1,0 +1,31 @@
+# Секреты и ключи
+.ssh/
+*.pem
+*.key
+
+# Бэкапы и архивы
+*.tar.gz
+*.zip
+freenet-prebackup.tar.gz
+
+# Мусор macOS
+.DS_Store
+._*
+
+# Временное
+tmp/
+*.log
+
+# Сборочные артефакты
+build/out/
+build/sandbox/
+build/.work.*/
+
+# Ключи подписи apk (Wave 4) — НИКОГДА не коммитить
+morok.apk.private.pem
+*.signkey
+
+# Внутренние планировочные документы — не публикуются
+TZ.md
+W3_NOTES_*.md
+W4_NOTES_*.md

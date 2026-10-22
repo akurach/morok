@@ -1,0 +1,81 @@
+#!/usr/sbin/nft -f
+# Morok — прозрачный прокси через TPROXY (fw4-совместимо, inet-таблица).
+# LAN-трафик -> sing-box tproxy-in (127.0.0.1:7895).
+# Прямые исключения: сам роутер, служебные подсети, RU-префиксы обрабатывает
+# сам sing-box на уровне route-правил — здесь только заворот в tproxy.
+#
+# Per-device (Wave 1):
+#   morok_dev_direct — MAC-и устройств с route=direct: идут мимо tproxy
+#   вообще (заполняет device_routes.sh из UCI).
+#   route=proxy|node:* — решается в sing-box по source_ip (gen_config.uc),
+#   здесь ничего не нужно.
+
+table inet morok {
+	set morok_bypass {
+		type ipv4_addr
+		flags interval
+		elements = {
+			0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8,
+			169.254.0.0/16, 172.16.0.0/12,
+			192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4
+		}
+	}
+
+	# per-device direct: эти MAC-и полностью минуют прозрачный прокси
+	set morok_dev_direct {
+		type ether_addr
+	}
+
+	# Wave 3.5: именованные счётчики для метрик (читает metrics_tick.uc
+	# через `nft -j list counters inet morok`, ubus morok_metrics read).
+	counter morok_dns_udp {}
+	counter morok_dns_tcp {}
+	counter morok_tproxy_tcp {}
+	counter morok_tproxy_udp {}
+	counter morok_dev_bypass {}
+
+	chain prerouting {
+		type filter hook prerouting priority mangle; policy accept;
+
+		# DNS-хиджак ПЕРВЫМ: запросы клиентов к роутеру (daddr local :53)
+		# тоже заворачиваем в sing-box — иначе они уходят в dnsmasq →
+		# провайдерский DNS, который отравляет/NXDOMAIN'ит блокируемые домены.
+		# В sing-box их ловит route-правило hijack-dns (gen_config.uc).
+		# Устройства с route=direct — их DNS не трогаем.
+		ether saddr != @morok_dev_direct meta l4proto udp udp dport 53 counter name morok_dns_udp tproxy to :7895 meta mark set 0x1 accept
+		ether saddr != @morok_dev_direct meta l4proto tcp tcp dport 53 counter name morok_dns_tcp tproxy to :7895 meta mark set 0x1 accept
+
+		# служебное — мимо
+		ip daddr @morok_bypass return
+
+		# трафик самого роутера не трогаем
+		fib daddr type local return
+
+		# устройства с route=direct — мимо tproxy
+		ether saddr @morok_dev_direct counter name morok_dev_bypass return
+
+		# всё остальное — в sing-box
+		meta l4proto tcp counter name morok_tproxy_tcp tproxy to :7895 meta mark set 0x1 accept
+		meta l4proto udp counter name morok_tproxy_udp tproxy to :7895 meta mark set 0x1 accept
+	}
+
+	chain output {
+		type route hook output priority mangle; policy accept;
+
+		# DNS-запросы роутера, помеченные для прокси-резолва
+		ip daddr @morok_bypass return
+	}
+
+	chain postrouting {
+		type filter hook postrouting priority mangle; policy accept;
+
+		ip daddr @morok_bypass return
+
+		# Сюда antidpi.sh динамически добавляет правило
+		#   meta l4proto { tcp, udp } queue num 200 bypass
+		# когда стартует nfqws2. Статически его здесь НЕТ намеренно:
+		# в стоковом ядре GL-прошивки нет модуля nfnetlink_queue,
+		# и правило с queue-вердиктом уронило бы загрузку всей таблицы.
+		# Пока движок не запущен — трафик идёт как обычно.
+	}
+}

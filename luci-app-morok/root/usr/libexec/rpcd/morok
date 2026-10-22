@@ -1,0 +1,2248 @@
+#!/usr/bin/ucode
+// Morok rpcd backend — ubus-объект "morok" через legacy exec-протокол
+// (rpcd вызывает: `morok list` и `morok call <method>`, аргументы — JSON на stdin).
+// Живые метрики (задержки, выбранный urltest-ом outbound) берём из
+// Clash API sing-box (127.0.0.1:9090); если sing-box не запущен —
+// честно отдаём состояние "down", а не мнимые данные.
+
+'use strict';
+
+import { cursor } from 'uci';
+import * as fs from 'fs';
+
+const CONF = 'morok';
+const CLASH_API = 'http://127.0.0.1:9090';
+
+function uc() {
+	let c = cursor();
+	c.load(CONF);
+	return c;
+}
+
+// json() на невалидном вводе бросает ФАТАЛЬНУЮ ошибку (убивает весь
+// rpcd-вызов с "No response") — внешние данные парсим только так
+function safe_json(s) {
+	let r = null;
+	try { r = json(s); } catch (e) { r = null; }
+	return r;
+}
+
+function http_get(url, timeout) {
+	let p = fs.popen(sprintf('curl -s -m %d %s 2>/dev/null', timeout, url));
+	if (!p) return null;
+	let body = p.read('all');
+	p.close();
+	if (!body || body == '') return null;
+	return safe_json(body);
+}
+
+// engine-aware: globals.engine (sing-box|xray, default sing-box);
+// живым считается процесс выбранного движка (Wave 3.2)
+function morok_engine() {
+	let c = uc();
+	let e = c.get(CONF, 'globals', 'engine');
+	return (e == 'xray') ? 'xray' : 'sing-box';
+}
+
+function sb_running() {
+	let name = (morok_engine() == 'xray') ? 'xray' : 'sing-box';
+	let p = fs.popen('pidof ' + name);
+	let pid = p ? p.read('line') : '';
+	if (p) p.close();
+	return pid != null && pid != '';
+}
+
+function clash_delays() {
+	let out = {};
+	let proxies = http_get(CLASH_API + '/proxies', 2);
+	if (!proxies || !proxies.proxies) return out;
+	for (let name, item in proxies.proxies) {
+		if (item.history && length(item.history) > 0) {
+			let last = item.history[length(item.history) - 1];
+			if (last.delay > 0) out[name] = last.delay;
+		}
+	}
+	return out;
+}
+
+function read_globals(c) {
+	return c.get_all(CONF, 'globals') || {};
+}
+
+function read_fallback(c) {
+	let fb = c.get_all(CONF, 'fallback') || {};
+	return {
+		enabled: fb.enabled == '1',
+		test_url: fb.test_url || '',
+		test_interval: int(fb.test_interval || 10),
+		fail_threshold: int(fb.fail_threshold || 3),
+		auto_return: fb.auto_return == '1',
+		return_delay: int(fb.return_delay || 60),
+		kill_switch: fb.kill_switch || 'kill',
+		chain: type(fb.chain) == 'array' ? fb.chain : (fb.chain ? [ fb.chain ] : [])
+	};
+}
+
+function read_nodes(c) {
+	let out = [];
+	c.foreach(CONF, 'node', function(s) {
+		let n = {
+			id: s['.name'],
+			label: s.label || s['.name'],
+			group: s.group || 'Manual',
+			type: s.type || 'unknown',
+			server: s.server || '',
+			port: s.port || '',
+			enabled: s.enabled == '1',
+			reality: s.reality == '1',
+			origin: s.origin || ''
+		};
+		// awg (Wave 3.1): фронту нужны поля интерфейса для просмотра/правки
+		if (n.type == 'awg') {
+			for (let f in [ 'private_key', 'peer_public_key', 'preshared_key',
+					'endpoint', 'jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4',
+					'h1', 'h2', 'h3', 'h4', 'mtu', 'keepalive' ])
+				n[f] = s[f] || '';
+			n.address = type(s.address) == 'array' ? s.address
+				: (s.address ? [ s.address ] : []);
+		}
+		push(out, n);
+	});
+	return out;
+}
+
+function read_rules(c) {
+	let out = [];
+	c.foreach(CONF, 'rule', function(s) {
+		push(out, {
+			id: s['.name'],
+			label: s.label || '',
+			match_type: s.match_type || 'custom',
+			match: type(s.match) == 'array' ? s.match : (s.match ? [ s.match ] : []),
+			source: s.source || '',
+			action: s.action || 'proxy',
+			enabled: s.enabled == '1'
+		});
+	});
+	return out;
+}
+
+function read_sources(c) {
+	let out = [];
+	c.foreach(CONF, 'source', function(s) {
+		push(out, {
+			id: s['.name'],
+			label: s.label || s['.name'],
+			url: s.url || '',
+			enabled: s.enabled == '1',
+			update_interval: int(s.update_interval || 0)
+		});
+	});
+	return out;
+}
+
+// ---------- Wave 1: устройства, лог, сторож ----------
+
+function bin_running(name) {
+	let p = fs.popen('pidof ' + name);
+	let pid = p ? p.read('line') : '';
+	if (p) p.close();
+	return pid != null && pid != '';
+}
+
+// AmneziaWG (Wave 3.1): тип ноды awg доступен только при установленных
+// kmod-amneziawg (модуль на диске или загружен) и amneziawg-tools (awg)
+function awg_kmod_present() {
+	let p = fs.popen("ls /lib/modules/*/amneziawg.ko 2>/dev/null | head -1; lsmod 2>/dev/null | awk '$1==\"amneziawg\"{print $1}' | head -1");
+	if (!p) return false;
+	let out = p.read('all');
+	p.close();
+	return out != null && replace(out, /\s+/g, '') != '';
+}
+
+function awg_available() {
+	return awg_kmod_present() && fs.stat('/usr/bin/awg') != null;
+}
+
+// /tmp/dhcp.leases: "expiry mac ip hostname clientid"
+function read_dhcp_leases() {
+	let out = {};
+	let raw = fs.readfile('/tmp/dhcp.leases');
+	if (!raw) return out;
+	let now = time();
+	for (let line in split(raw, '\n')) {
+		let f = split(line, ' ');
+		if (length(f) < 4 || f[1] == '') continue;
+		let mac = lc(f[1]);
+		out[mac] = {
+			ip: f[2],
+			hostname: (f[3] == '*') ? '' : f[3],
+			lease_valid: int(f[0]) > now
+		};
+	}
+	return out;
+}
+
+// ip neigh: "ip dev X lladdr mac STATE" (FAILED-строки без lladdr пропускаем)
+function read_neigh() {
+	let out = {};
+	let p = fs.popen('ip neigh show 2>/dev/null');
+	if (!p) return out;
+	let raw = p.read('all');
+	p.close();
+	if (!raw) return out;
+	for (let line in split(raw, '\n')) {
+		let f = split(line, ' ');
+		if (length(f) < 4) continue;
+		let mac = null;
+		for (let i = 0; i < length(f) - 1; i++) {
+			if (f[i] == 'lladdr') { mac = lc(f[i + 1]); break; }
+		}
+		if (!mac) continue;
+		let state = f[length(f) - 1];
+		out[mac] = { ip: f[0], ok: (state != 'FAILED' && state != 'INCOMPLETE') };
+	}
+	return out;
+}
+
+function dev_online(mac, leases, neigh) {
+	if (neigh[mac] && neigh[mac].ok) return true;
+	if (leases[mac] && leases[mac].lease_valid) return true;
+	return false;
+}
+
+function valid_mac(mac) {
+	return mac != null && match(mac, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/) != null;
+}
+
+function reload_async() {
+	fs.popen('/etc/init.d/morok reload >/dev/null 2>&1 &');
+}
+
+// ---------- Wave 2: диагностика, бэкап, компоненты ----------
+
+const BIN_DIR = '/usr/lib/morok/bin';
+const LIST_DIR = '/var/etc/morok/lists';
+const SRS_DIR = '/usr/share/morok/rulesets';
+const SB_JSON = '/var/etc/morok/sing-box.json';
+const OUT_DIR_XRAY = '/var/etc/morok/xray.json';
+// все известные типы секций — для backup/restore (foreach с null-типом
+// работает, но явный список защищает от мусора и будущих сюрпризов)
+const SECTION_TYPES = [ 'globals', 'fallback', 'antidpi', 'node',
+	'subscription', 'rule', 'device', 'source', 'component' ];
+// вендорные бинари, которые умеем показывать даже без UCI-секции component
+// (роутер обновлён файлами, а конфиг ещё старый)
+const KNOWN_BINS = [ 'sing-box', 'nfqws2', 'xray', 'byedpi' ];
+
+function sh(cmd) {
+	// stdout команды целиком (stderr глушим); null если не запустилась
+	let p = fs.popen(cmd + ' 2>/dev/null');
+	if (!p) return null;
+	let out = p.read('all');
+	p.close();
+	return out;
+}
+
+function sh_rc(cmd) {
+	// только код возврата
+	let p = fs.popen(cmd + ' >/dev/null 2>&1; echo -n $?');
+	if (!p) return 255;
+	let out = p.read('all');
+	p.close();
+	return int(out);
+}
+
+function sh_full(cmd) {
+	// { out, rc } — и вывод, и код возврата
+	let p = fs.popen(cmd + ' 2>&1; echo -n __RC__$?');
+	if (!p) return { out: '', rc: 255 };
+	let out = p.read('all') || '';
+	p.close();
+	let pos = rindex(out, '__RC__');
+	if (pos < 0) return { out: out, rc: 255 };
+	return { out: substr(out, 0, pos), rc: int(substr(out, pos + 6)) };
+}
+
+function trim(s) {
+	if (s == null) return '';
+	return replace(replace(s, /^\s+/, ''), /\s+$/, '');
+}
+
+function has_suffix(s, suf) {
+	if (length(s) < length(suf)) return false;
+	return substr(s, length(s) - length(suf)) == suf;
+}
+
+// domain_suffix-семантика sing-box: pattern "b.com" матчит и "a.b.com"
+function domain_match(domain, pat) {
+	if (domain == pat) return true;
+	return has_suffix(domain, '.' + pat);
+}
+
+function valid_domain(d) {
+	return d != null && length(d) > 0 && length(d) < 253 &&
+		match(d, /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/) != null;
+}
+
+function sb_bin() {
+	if (morok_engine() == 'xray') {
+		if (fs.stat(BIN_DIR + '/xray')) return BIN_DIR + '/xray';
+		return '/usr/bin/xray';
+	}
+	if (fs.stat(BIN_DIR + '/sing-box')) return BIN_DIR + '/sing-box';
+	return '/usr/bin/sing-box';
+}
+
+// команда валидации конфига выбранного движка
+function core_check_cmd() {
+	if (morok_engine() == 'xray')
+		return 'XRAY_LOCATION_ASSET=/var/etc/morok/geo ' + sb_bin() +
+			' run -test -config ' + OUT_DIR_XRAY;
+	return sb_bin() + ' check -c ' + SB_JSON;
+}
+
+// домен для DNS-пробы: первый валидный из включённых custom-правил
+// (заведомо «интересный» — юзер сам его внёс), фоллбэк — rutracker.org
+function diag_probe_domain(c) {
+	let d = '';
+	c.foreach(CONF, 'rule', function(s) {
+		if (d != '') return;
+		if (s.enabled != '1' || s.match_type != 'custom') return;
+		let mm = type(s.match) == 'array' ? s.match : (s.match ? [ s.match ] : []);
+		for (let m in mm) {
+			m = lc(replace(m, /\*/g, ''));
+			m = replace(m, /^\.+|\.+$/g, '');
+			if (valid_domain(m)) { d = m; break; }
+		}
+	});
+	if (d == '') d = 'rutracker.org';
+	return d;
+}
+
+function dig_a(domain, server) {
+	let out = sh(sprintf('dig +short +time=3 +tries=1 %s @%s', domain, server));
+	if (!out) return [];
+	let ips = [];
+	for (let line in split(out, '\n')) {
+		line = trim(line);
+		if (match(line, /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/)) push(ips, line);
+	}
+	return ips;
+}
+
+function step(id, label, status, detail, fix) {
+	let s = { id: id, label: label, status: status, detail: detail };
+	if (fix != null && fix != '') s.fix = fix;
+	return s;
+}
+
+// версия бинаря: sing-box понимает `version`, остальные — `--version`;
+// из первой строки выдёргиваем первую версиёобразную последовательность
+function bin_version(path, name) {
+	let out = null;
+	if (name == 'sing-box') out = sh(path + ' version');
+	if (!out || out == '') out = sh(path + ' --version');
+	if (!out || out == '') out = sh(path + ' version');
+	if (!out) return '';
+	let line = split(out, '\n')[0];
+	let m = match(line, /[0-9]+\.[0-9]+(\.[0-9]+)*/);
+	return m ? m[0] : '';
+}
+
+function bin_sha256(path) {
+	let out = sh('sha256sum ' + path);
+	if (!out || out == '') return '';
+	return split(out, ' ')[0];
+}
+
+function valid_bin_path(path) {
+	// только наш вендорный каталог — никаких произвольных путей из UCI
+	return path != null && substr(path, 0, length(BIN_DIR) + 1) == BIN_DIR + '/' &&
+		index(substr(path, length(BIN_DIR) + 1), '/') < 0;
+}
+
+// ---------- test_nodes: кэш и разбор результатов ----------
+
+const TEST_DIR = '/var/etc/morok/test.d';
+const TEST_CACHE = '/var/etc/morok/node_test.json';
+
+// строка "<tcp_ms|-> <url_ms|->" от test_nodes.sh
+function read_test_result(id) {
+	let r = { tcp_ms: null, url_ms: null };
+	if (match(id, /^[A-Za-z0-9_.-]+$/) == null) return r;
+	let raw = fs.readfile(TEST_DIR + '/' + id + '.res');
+	if (!raw) return r;
+	let f = split(trim(raw), /\s+/);
+	if (length(f) >= 1 && match(f[0], /^[0-9]+$/) != null) r.tcp_ms = int(f[0]);
+	if (length(f) >= 2 && match(f[1], /^[0-9]+$/) != null) r.url_ms = int(f[1]);
+	return r;
+}
+
+function read_test_cache() {
+	let raw = fs.readfile(TEST_CACHE);
+	if (!raw) return {};
+	let j = safe_json(raw);
+	if (!j || type(j.data) != 'object') return {};
+	return j.data;
+}
+
+// ---------- компоненты: кэш sha256 по mtime, поиск секции, версии ----------
+
+const COMP_CACHE = '/var/etc/morok/comp_cache.json';
+
+// ---------- Wave 4: канал самообновления приложения и маркет пресетов ----------
+
+const APP_UPDATE_SH = '/usr/share/morok/app_update.sh';
+const DEFAULT_APP_CHANNEL = 'https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/app.json';
+const PRESETS_BUILTIN = '/usr/share/morok/presets.json';
+const MARKET_CACHE = '/var/etc/morok/market_cache.json';
+const MARKET_TTL = 21600;
+
+function app_channel_url(c) {
+	let u = c.get(CONF, 'globals', 'app_channel');
+	if (u == null || u == '') u = DEFAULT_APP_CHANNEL;
+	return u;
+}
+
+// каталог маркета живёт рядом с манифестом канала: …/channel/app.json →
+// …/channel/presets.json (урок 19: rindex возвращает >= 0, проверяем числом)
+function market_catalog_url(c) {
+	let u = app_channel_url(c);
+	let pos = rindex(u, '/');
+	if (pos < 0) return null;
+	return substr(u, 0, pos + 1) + 'presets.json';
+}
+
+// минимальная валидация каталога: битые записи выкидываем, а не отдаём UI
+function market_validate(j) {
+	if (type(j) != 'object' || type(j.presets) != 'array') return null;
+	let out = [];
+	for (let p in j.presets) {
+		if (type(p) != 'object' || type(p.id) != 'string' || type(p.label) != 'string')
+			continue;
+		if (type(p.rules) != 'array' || length(p.rules) == 0)
+			continue;
+		push(out, p);
+	}
+	if (length(out) == 0) return null;
+	return { presets: out };
+}
+
+// sha256 бинаря — дорого (десятки МБ); кэшируем по mtime в tmpfs,
+// пишем файл только когда что-то реально пересчитали
+function bin_sha256_cached(path) {
+	let st = fs.stat(path);
+	if (!st) return '';
+	let cache = {};
+	let raw = fs.readfile(COMP_CACHE);
+	if (raw) {
+		let j = safe_json(raw);
+		if (type(j) == 'object') cache = j;
+	}
+	if (cache[path] && cache[path].mtime == st.mtime && cache[path].sha256 != '')
+		return cache[path].sha256;
+	let s = bin_sha256(path);
+	cache[path] = { mtime: st.mtime, sha256: s };
+	let f = fs.open(COMP_CACHE + '.tmp', 'w');
+	if (f) {
+		f.write(sprintf('%J', cache));
+		f.close();
+		fs.rename(COMP_CACHE + '.tmp', COMP_CACHE);
+	}
+	return s;
+}
+
+function find_component(c, name) {
+	let sec = null;
+	c.foreach(CONF, 'component', function(s) {
+		if ((s.name || s['.name']) == name) sec = s;
+	});
+	return sec;
+}
+
+// a новее b? семверное сравнение по числовым компонентам
+function version_newer(a, b) {
+	if (a == null || a == '') return false;
+	if (b == null || b == '') return true;
+	let pa = split(a, '.'), pb = split(b, '.');
+	let n = length(pa) > length(pb) ? length(pa) : length(pb);
+	for (let i = 0; i < n; i++) {
+		let x = int(pa[i] || 0), y = int(pb[i] || 0);
+		if (x > y) return true;
+		if (x < y) return false;
+	}
+	return false;
+}
+
+// внешний текст по URL (манифест канала): сначала напрямую,
+// при неудаче — через локальный туннель, как в bin_update.sh
+function fetch_text(url) {
+	if (url == null || match(url, /^https?:\/\/[^ \t'"\\]+$/) == null)
+		return null;
+	let out = sh(sprintf('curl -sL -m 30 %s', url));
+	if (out == null || out == '')
+		out = sh(sprintf('curl -sL -m 30 -x http://127.0.0.1:7890 %s', url));
+	if (out == null || out == '') return null;
+	return out;
+}
+
+// ---------- reorder_rules: перемапливание состояния сторожа ----------
+// guardian.state и adaptive_state.json ключуются индексом @rule[N] —
+// при перестановке правил ключи надо переехать вслед за правилами,
+// иначе сторож «приклеит» чужой режим к другому правилу.
+function remap_rule_state(old_order, new_order) {
+	let new_idx = {};
+	for (let i = 0; i < length(new_order); i++)
+		new_idx['' + new_order[i]] = i;
+	let remap = {};
+	for (let i = 0; i < length(old_order); i++)
+		remap['' + i] = '' + new_idx[old_order[i]];
+	// guardian.state: "@rule[N]=fails:mode:since:lastprobe"
+	// (дубликаты ключей схлопываем — последнее значение побеждает)
+	let gs = fs.readfile('/var/etc/morok/guardian.state');
+	if (gs) {
+		let bykey = {}, order = [];
+		for (let line in split(gs, '\n')) {
+			let m = match(line, /^@rule\[([0-9]+)\]=(.*)$/);
+			if (!m) continue;
+			let k = remap[m[1]] || m[1];
+			if (!(k in bykey)) push(order, k);
+			bykey[k] = m[2];
+		}
+		let out = [];
+		for (let k in order)
+			push(out, '@rule[' + k + ']=' + bykey[k]);
+		fs.writefile('/var/etc/morok/guardian.state', join('\n', out) + (length(out) ? '\n' : ''));
+	}
+	// adaptive_state.json: {"N":"mode"}
+	let raw = fs.readfile('/var/etc/morok/adaptive_state.json');
+	let j = raw ? safe_json(raw) : null;
+	if (type(j) == 'object') {
+		let nj = {};
+		for (let k, v in j)
+			nj[remap[k] || k] = v;
+		fs.writefile('/var/etc/morok/adaptive_state.json', sprintf('%J', nj));
+	}
+}
+
+// ---------- диагностика: каждый шаг — отдельная функция ----------
+// diagnose гоняет все по порядку, diagnose_step {id} — один (живой UI
+// дёргает шаги по одному и рисует прогресс).
+
+function diag_step_service(c, g) {
+	let engine = morok_engine();
+	let running = sb_running();
+	let nft_ok = sh_rc('nft list table inet morok') == 0;
+	if (!running)
+		return step('service', 'Сервис ' + engine,
+			g.enabled == '1' ? 'fail' : 'warn',
+			g.enabled == '1'
+				? engine + ' не запущен, хотя globals.enabled=1'
+				: 'Морок выключен (globals.enabled=0)', 'service');
+	if (!nft_ok)
+		return step('service', 'Сервис ' + engine, 'warn',
+			engine + ' жив, но nft-таблица inet morok отсутствует — tproxy не работает', 'service');
+	return step('service', 'Сервис ' + engine, 'ok',
+		engine + ' запущен, nft-правила на месте');
+}
+
+function diag_step_config(c, g) {
+	let engine = morok_engine();
+	let cfg = engine == 'xray' ? OUT_DIR_XRAY : SB_JSON;
+	let cfg_exists = fs.stat(cfg) != null;
+	let check_rc = cfg_exists ? sh_rc(core_check_cmd()) : 1;
+	if (!cfg_exists)
+		return step('config', 'Конфиг ' + engine, 'fail',
+			cfg + ' не существует — генерация не отработала', 'config');
+	if (check_rc != 0)
+		return step('config', 'Конфиг ' + engine, 'fail',
+			engine + ' отвергает ' + cfg, 'config');
+	return step('config', 'Конфиг ' + engine, 'ok',
+		'конфиг сгенерирован и проходит проверку движка');
+}
+
+function diag_step_tunnel(c, g) {
+	if (!sb_running())
+		return step('tunnel', 'Туннель', 'fail',
+			'сервис не запущен — проверка невозможна', 'tunnel');
+	let ip = trim(sh('curl -s -m 8 -x http://127.0.0.1:7890 https://api.ipify.org'));
+	if (match(ip || '', /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) != null)
+		return step('tunnel', 'Туннель', 'ok',
+			'внешний IP через прокси: ' + ip);
+	return step('tunnel', 'Туннель', 'fail',
+		'запрос через 127.0.0.1:7890 не прошёл — нода/цепочка мертва?', 'tunnel');
+}
+
+function diag_step_dns(c, g) {
+	// локальный резолвер (dnsmasq → апстрим) против прямого UDP-резолва.
+	// Расхождение/пустота на проблемном домене = недостоверные ответы у
+	// провайдера. LAN-клиенты при dns_hijack=1 резолвятся через
+	// sing-box DNS (tproxy забирает UDP/53 раньше dnsmasq).
+	let dd = diag_probe_domain(c);
+	let via_router = dig_a(dd, '127.0.0.1');
+	let via_direct = dig_a(dd, '223.5.5.5');
+	if (length(via_router) > 0 && length(via_direct) > 0) {
+		let same = false;
+		for (let ip in via_router)
+			if (index(join(' ', via_direct), ip) >= 0) { same = true; break; }
+		if (same)
+			return step('dns', 'DNS', 'ok',
+				dd + ' резолвится одинаково и через роутер, и напрямую');
+		return step('dns', 'DNS', 'warn',
+			dd + ': ответы dnsmasq и прямого резолва расходятся (' +
+			join(',', via_router) + ' vs ' + join(',', via_direct) +
+			') — возможна подмена DNS у апстрима', 'dns');
+	}
+	if (length(via_router) == 0 && length(via_direct) > 0)
+		return step('dns', 'DNS', 'warn',
+			dd + ': dnsmasq (апстрим провайдера) не резолвит домен, прямой резолв — да. ' +
+			'Типичная подмена ответов; LAN-клиенты ходят через sing-box DNS (hijack=' +
+			(g.dns_hijack == '1' ? 'вкл' : 'ВЫКЛ — включите!') + ')', 'dns');
+	if (length(via_router) > 0)
+		return step('dns', 'DNS', 'warn',
+			dd + ': dnsmasq отвечает, а прямой резолв 223.5.5.5 — нет (нестандартно)', 'dns');
+	return step('dns', 'DNS', 'fail',
+		dd + ' не резолвится ни через роутер, ни напрямую — DNS мёртв', 'dns');
+}
+
+function diag_step_dpi(c, g) {
+	// TLS к googlevideo напрямую (трафик самого роутера не попадает в
+	// tproxy, но postrouting-очередь nfqws2 его обрабатывает — при живом
+	// движке проба идёт через него, и fail тогда означает «доставка до
+	// домена сейчас не работает»)
+	let engine = c.get(CONF, 'antidpi', 'engine') || 'none';
+	let nfq = bin_running('nfqws2');
+	let probe_out = trim(sh('curl -s -o /dev/null -m 12 -w "%{http_code} %{time_total}" https://www.googlevideo.com/generate_204'));
+	let pf = split(probe_out != '' ? probe_out : '000 0', ' ');
+	let pcode = pf[0];
+	let ptime = (length(pf) > 1 ? pf[1] : '0') * 1;
+	let via_engine = (nfq && engine == 'zapret2') ? ' (проба прошла через nfqws2 — доставка до домена не сработала)' : '';
+	if (pcode == '000')
+		return step('dpi', 'Доставка пакетов', 'fail',
+			'TLS ClientHello к googlevideo напрямую умирает — DPI-фильтрация провайдера рвёт соединение' + via_engine, 'dpi');
+	if (ptime > 3)
+		return step('dpi', 'Доставка пакетов', 'warn',
+			sprintf('канал напрямую деградирован: ответ googlevideo за %.1f с — вероятна деградация доставки', ptime), 'dpi');
+	return step('dpi', 'Доставка пакетов', 'ok',
+		sprintf('TLS к googlevideo напрямую жив (HTTP %s за %.2f с)', pcode, ptime));
+}
+
+function diag_step_antidpi(c, g) {
+	let engine = c.get(CONF, 'antidpi', 'engine') || 'none';
+	let nfq = bin_running('nfqws2');
+	let nft_post = sh('nft list chain inet morok postrouting') || '';
+	let queue_ok = index(nft_post, 'queue') >= 0;
+	if (engine == 'none')
+		return step('antidpi', 'Движок оптимизации', 'ok',
+			'движок выключен (antidpi.engine=none)');
+	if (nfq && queue_ok)
+		return step('antidpi', 'Движок оптимизации', 'ok',
+			'nfqws2 запущен, трафик завёрнут в NFQUEUE 200');
+	if (nfq)
+		return step('antidpi', 'Движок оптимизации', 'warn',
+			'nfqws2 жив, но queue-правила в nft нет — трафик мимо движка', 'antidpi');
+	return step('antidpi', 'Движок оптимизации', 'fail',
+		'engine=' + engine + ', но nfqws2 не запущен', 'antidpi');
+}
+
+function diag_step_lists(c, g) {
+	let missing = [];
+	c.foreach(CONF, 'rule', function(s) {
+		if (s.enabled != '1') return;
+		let mt = s.match_type || 'custom';
+		if (mt == 'source_list') {
+			if (!fs.stat(LIST_DIR + '/' + (s.source || '') + '.json'))
+				push(missing, 'список ' + (s.source || '?'));
+		} else if (mt == 'geosite') {
+			let mm = type(s.match) == 'array' ? s.match : (s.match ? [ s.match ] : []);
+			for (let m in mm)
+				if (!fs.stat(SRS_DIR + '/geosite-' + m + '.srs'))
+					push(missing, 'geosite-' + m + '.srs');
+		} else if (mt == 'geosite_geoip') {
+			let mm = type(s.match) == 'array' ? s.match : (s.match ? [ s.match ] : []);
+			for (let m in mm) {
+				let f = (length(m) == 2 ? 'geoip-' : 'geosite-') + m + '.srs';
+				if (!fs.stat(SRS_DIR + '/' + f)) push(missing, f);
+			}
+		}
+	});
+	if (length(missing) > 0)
+		return step('lists', 'Списки и геосеты', 'warn',
+			'не скачаны: ' + join(', ', missing) + ' — правила по ним молча пропускаются', 'lists');
+	return step('lists', 'Списки и геосеты', 'ok',
+		'все списки включённых правил на месте');
+}
+
+const DIAG_ORDER = [ 'service', 'config', 'tunnel', 'dns', 'dpi', 'antidpi', 'lists' ];
+const DIAG_FN = {
+	service: diag_step_service,
+	config: diag_step_config,
+	tunnel: diag_step_tunnel,
+	dns: diag_step_dns,
+	dpi: diag_step_dpi,
+	antidpi: diag_step_antidpi,
+	lists: diag_step_lists
+};
+
+// ---------- Оптимизация: ручной выбор профиля, статус, проверка ----------
+
+const ANTIDPI_HOSTLIST = '/var/etc/morok/antidpi-hostlist.txt';
+const ANTIDPI_SH = '/usr/share/morok/antidpi.sh';
+
+// метаданные профилей — UI рисует их радио-карточками; аргументы
+// профилей живут в antidpi.sh (единственное место правды)
+function antidpi_strategies() {
+	return [
+		{
+			id: 'youtube',
+			label: 'YouTube (мягкий)',
+			desc: 'multisplit ClientHello по списку доменов + сброс QUIC. Минимальное вмешательство — для оптимизации доставки до видеохостингов.'
+		},
+		{
+			id: 'universal',
+			label: 'Универсальная (агрессивная)',
+			desc: 'Поддельный ClientHello с ttl=8/md5/badsum + multidisorder. Когда доставка фильтруется по DPI-отпечатку и мягкий профиль не справляется.'
+		},
+		{
+			id: 'custom',
+			label: 'Своя стратегия',
+			desc: 'Сырая строка аргументов nfqws2 (--filter-tcp/--lua-desync) — ручной подбор под своего провайдера.'
+		}
+	];
+}
+
+function read_antidpi_hostlist() {
+	let raw = fs.readfile(ANTIDPI_HOSTLIST);
+	if (!raw) return [];
+	let out = [];
+	for (let line in split(raw, '\n')) {
+		line = trim(line);
+		if (line != '') push(out, line);
+	}
+	return out;
+}
+
+// сводка сторожа по правилам оптимизации для карточки статуса:
+// "YouTube, Discord, Meta — через VPN". Ключи guardian.state —
+// индексы @rule[N] в порядке foreach, как в guardian_status.
+function antidpi_guardian_summary(c) {
+	let stmap = {};
+	let raw = fs.readfile('/var/etc/morok/guardian.state');
+	if (raw) {
+		for (let line in split(raw, '\n')) {
+			let eq = index(line, '=');
+			if (eq <= 0) continue;
+			stmap[substr(line, 0, eq)] = substr(line, eq + 1);
+		}
+	}
+	let parts = [];
+	let modes = {};
+	let idx = -1;
+	c.foreach(CONF, 'rule', function(s) {
+		idx++;
+		if (s.action != 'antidpi' || s.enabled != '1') return;
+		let mode = 'antidpi';
+		if (s.adaptive == '1') {
+			let st = stmap['@rule[' + idx + ']'] || '0:antidpi:0:0';
+			let f = split(st, ':');
+			mode = f[1] || 'antidpi';
+		}
+		modes[mode] = 1;
+		push(parts, (s.label || s['.name']) + ' — ' +
+			(mode == 'proxy' ? 'через VPN' : 'оптимизация'));
+	});
+	if (length(parts) == 0)
+		return { mode: 'off', state_text: 'нет включённых правил с действием «Оптимизация»' };
+	let mode = 'antidpi';
+	if (modes['proxy'] && modes['antidpi']) mode = 'mixed';
+	else if (modes['proxy']) mode = 'proxy';
+	return { mode: mode, state_text: join('; ', parts) };
+}
+
+// ---------- Сканер профилей доставки (батарея scan_profiles.txt) ----------
+
+const SCAN_SH = '/usr/share/morok/scan_antidpi.sh';
+const SCAN_STATE = '/var/etc/morok/scan_state.json';
+const SCAN_PROFILES = '/usr/share/morok/scan_profiles.txt';
+const SCAN_PIDFILE = '/var/etc/morok/scan.pid';
+
+function scan_pid_alive() {
+	let raw = fs.readfile(SCAN_PIDFILE);
+	if (!raw) return false;
+	let pid = int(trim(raw));
+	if (pid <= 0) return false;
+	return sh_rc('kill -0 ' + pid) == 0;
+}
+
+// профиль из батареи по id → { id, label, tcp, udp } или null
+function scan_profile_by_id(want) {
+	let raw = fs.readfile(SCAN_PROFILES);
+	if (!raw) return null;
+	for (let line in split(raw, '\n')) {
+		line = trim(line);
+		if (line == '' || substr(line, 0, 1) == '#') continue;
+		let f = split(line, '|');
+		if (length(f) < 4) continue;
+		if (f[0] == want)
+			return { id: f[0], label: f[1], tcp: f[2], udp: f[3] };
+	}
+	return null;
+}
+
+function scan_profiles_count() {
+	let raw = fs.readfile(SCAN_PROFILES);
+	if (!raw) return 0;
+	let n = 0;
+	for (let line in split(raw, '\n')) {
+		line = trim(line);
+		if (line != '' && substr(line, 0, 1) != '#' && index(line, '|') > 0) n++;
+	}
+	return n;
+}
+
+// реализация set_antidpi вынесена из таблицы методов: scan_apply
+// вызывает её тоже, а из тела таблицы methods.* недоступен
+// (ucode: TDZ — «can't access lexical declaration before initialization»)
+function set_antidpi_impl(a) {
+	let c = uc();
+	let cur = c.get_all(CONF, 'antidpi');
+	// секция могла отсутствовать в старом конфиге — создаём именованную
+	if (cur == null) {
+		c.set(CONF, 'antidpi', 'antidpi');
+		cur = {};
+	}
+	let new_strategy = (a.strategy != null && a.strategy != '') ? a.strategy : (cur.strategy || 'youtube');
+	let new_engine = (a.engine != null && a.engine != '') ? a.engine : (cur.engine || 'none');
+	let known = { youtube: 1, universal: 1, custom: 1 };
+	if (!known[new_strategy])
+		return { ok: false, error: 'неизвестная стратегия: ' + new_strategy };
+	if (new_engine != 'zapret2' && new_engine != 'none')
+		return { ok: false, error: 'engine должен быть zapret2|none' };
+	let new_custom = (a.strategy_custom != null) ? a.strategy_custom : (cur.strategy_custom || '');
+	if (new_strategy == 'custom' && trim(new_custom) == '')
+		return { ok: false, error: 'стратегия custom требует непустой strategy_custom' };
+	if (length(new_custom) > 2000)
+		return { ok: false, error: 'strategy_custom слишком длинный (максимум 2000 символов)' };
+	if (match(new_custom, /[\r\n]/) != null)
+		return { ok: false, error: 'strategy_custom должен быть одной строкой' };
+	// запоминаем старые значения — при провале dry-run откатим
+	let old_strategy = cur.strategy;
+	let old_engine = cur.engine;
+	let old_custom = cur.strategy_custom;
+	c.set(CONF, 'antidpi', 'strategy', new_strategy);
+	c.set(CONF, 'antidpi', 'engine', new_engine);
+	if (a.strategy_custom != null)
+		c.set(CONF, 'antidpi', 'strategy_custom', new_custom);
+	c.commit(CONF);
+	// самопроверка стратегии ДО перезапуска движка: битый custom
+	// не роняет работающий движок — честная ошибка и откат UCI
+	let chk = sh_full(ANTIDPI_SH + ' check');
+	if (chk.rc != 0) {
+		if (old_strategy == null) c.delete(CONF, 'antidpi', 'strategy');
+		else c.set(CONF, 'antidpi', 'strategy', old_strategy);
+		if (old_engine == null) c.delete(CONF, 'antidpi', 'engine');
+		else c.set(CONF, 'antidpi', 'engine', old_engine);
+		if (old_custom == null) c.delete(CONF, 'antidpi', 'strategy_custom');
+		else c.set(CONF, 'antidpi', 'strategy_custom', old_custom);
+		c.commit(CONF);
+		let why = trim(chk.out);
+		if (length(why) > 400) why = substr(why, length(why) - 400);
+		return {
+			ok: false,
+			error: 'nfqws2 отверг аргументы стратегии — настройки откачены. ' + why
+		};
+	}
+	sh_rc(ANTIDPI_SH + ' restart');
+	sleep(1500);
+	let running = bin_running('nfqws2');
+	if (new_engine != 'zapret2')
+		return { ok: true, running: false, note: 'движок выключен (engine=' + new_engine + ')' };
+	return {
+		ok: true,
+		running: running,
+		note: running
+			? 'стратегия применена, nfqws2 работает'
+			: 'стратегия валидна (dry-run прошёл), но nfqws2 не поднялся — смотрите /tmp/log/morok.log (нет включённых правил «Оптимизация»? нет kmod-nft-queue?)'
+	};
+}
+
+// ---------- методы ----------
+
+let methods = {
+	status: function(a) {
+		let c = uc();
+		let g = read_globals(c);
+		let fb = read_fallback(c);
+		let engine = morok_engine();
+		let running = sb_running();
+		// живые задержки есть только у sing-box (Clash API); у xray
+		// их нет — all_dead не вычислим, честно false
+		let delays = (running && engine == 'sing-box') ? clash_delays() : {};
+		let active = g.active_node || '';
+		let active_label = '';
+		let active_found = false;
+		c.foreach(CONF, 'node', function(s) {
+			if (s['.name'] == active) {
+				active_label = s.label || s['.name'];
+				active_found = s.enabled == '1';
+			}
+		});
+		return {
+			running: running,
+			engine: engine,
+			enabled: g.enabled == '1',
+			mode: g.mode || 'smart',
+			transparent: g.transparent == '1',
+			antidpi: g.antidpi == '1',
+			active_node: active,
+			active_label: active_label,
+			// активная нода протухла (удалена/выключена) — фронт покажет предупреждение
+			active_broken: active != '' && !active_found,
+			active_ping: delays[active] || 0,
+			chain: fb.chain,
+			kill_switch: fb.kill_switch,
+			all_dead: running && engine == 'sing-box' && length(keys(delays)) == 0,
+			antidpi_engine: c.get(CONF, 'antidpi', 'engine') || 'none',
+			antidpi_running: bin_running('nfqws2'),
+			// Wave 3.1: доступность типа ноды awg (kmod + утилита awg)
+			awg_available: awg_available(),
+			wizard_done: g.wizard_done == '1'
+		};
+	},
+
+	nodes: function(a) {
+		let c = uc();
+		let delays = sb_running() ? clash_delays() : {};
+		let nodes = read_nodes(c);
+		let fb = read_fallback(c);
+		let last = read_test_cache();
+		for (let n in nodes) {
+			n.ping = delays[n.id] || null;
+			n.in_chain = index(join(' ', fb.chain), n.id) >= 0;
+			// последние измерения из test_nodes (кэш tmpfs, tmpfs пуст
+			// после ребута → null, это нормально)
+			let m = last[n.id];
+			n.tcp_ms = (m && m.tcp_ms != null) ? m.tcp_ms : null;
+			n.url_ms = (m && m.url_ms != null) ? m.url_ms : null;
+			n.dns_ok = null;
+		}
+		let subs = [];
+		c.foreach(CONF, 'subscription', function(s) {
+			push(subs, {
+				id: s['.name'], label: s.label || s['.name'],
+				url: type(s.url) == 'array' ? s.url : (s.url ? [ s.url ] : []),
+				enabled: s.enabled == '1',
+				update_interval: int(s.update_interval || 0),
+				last_update: int(s.last_update || 0)
+			});
+		});
+		return { nodes: nodes, subscriptions: subs };
+	},
+
+	rules: function(a) {
+		return { rules: read_rules(uc()) };
+	},
+
+	chain: function(a) {
+		let c = uc();
+		return { fallback: read_fallback(c), nodes: read_nodes(c) };
+	},
+
+	sources: function(a) {
+		return { sources: read_sources(uc()) };
+	},
+
+	test_nodes: function(a) {
+		if (!sb_running())
+			return { ok: false, error: 'sing-box не запущен' };
+		// скрипт параллелит проверки по всем включённым нодам
+		// (фоновые джобы + wait): суммарно ~7с вместо последовательного
+		// перебора 33 нод; выключенные ноды пропускает сам
+		sh('/usr/share/morok/test_nodes.sh');
+		let c = uc();
+		let results = [];
+		let cache = {};
+		c.foreach(CONF, 'node', function(s) {
+			if (s.enabled != '1') return;
+			let id = s['.name'];
+			let m = read_test_result(id);
+			let item = {
+				id: id,
+				tcp_ms: m.tcp_ms,
+				url_ms: m.url_ms,
+				// Clash API не умеет DNS-пробу через конкретный outbound —
+				// честно null, а не выдуманное значение
+				dns_ok: null
+			};
+			push(results, item);
+			cache[id] = { tcp_ms: item.tcp_ms, url_ms: item.url_ms, dns_ok: null };
+		});
+		// кэш последних измерений — метод nodes отдаёт их без перезамера
+		let f = fs.open(TEST_CACHE + '.tmp', 'w');
+		if (f) {
+			f.write(sprintf('%J', { ts: time(), data: cache }));
+			f.close();
+			fs.rename(TEST_CACHE + '.tmp', TEST_CACHE);
+		}
+		return {
+			ok: true,
+			results: results,
+			note: 'dns_ok=null: Clash API sing-box не предоставляет DNS-пробу через конкретную ноду'
+		};
+	},
+
+	set_node: function(a) {
+		let c = uc();
+		c.set(CONF, a.id, 'enabled', a.enabled ? '1' : '0');
+		c.commit(CONF);
+		// выключенная нода не должна оставаться в urltest-цепочке живого
+		// конфига: gen_config фильтрует по enabled — применяем сразу
+		reload_async();
+		return { ok: true };
+	},
+
+	select_node: function(a) {
+		// валидируем: нода должна существовать и быть включённой,
+		// иначе gen_config проигнорирует ссылку и выбор «молча» не сработает
+		let c = uc();
+		let found = null;
+		c.foreach(CONF, 'node', function(s) {
+			if (s['.name'] == a.id) found = s;
+		});
+		if (!found)
+			return { ok: false, error: 'нода не найдена: ' + a.id };
+		if (found.enabled != '1')
+			return { ok: false, error: 'нода выключена: ' + (found.label || a.id) };
+		c.set(CONF, 'globals', 'active_node', a.id);
+		c.commit(CONF);
+		fs.popen('/etc/init.d/morok reload >/dev/null 2>&1 &');
+		return { ok: true };
+	},
+
+	add_node: function(a) {
+		// ручная нода: фронт (парсер share-ссылки) присылает готовый
+		// sing-box outbound JSON — храним verbatim, как ноды подписки
+		if (!a.label || !a.raw)
+			return { ok: false, error: 'нужны label и raw' };
+		let o = safe_json(a.raw);
+		if (!o || !o.type)
+			return { ok: false, error: 'raw не похож на outbound JSON' };
+		let c = uc();
+		let sid = c.add(CONF, 'node');
+		c.set(CONF, sid, 'enabled', '1');
+		c.set(CONF, sid, 'label', a.label);
+		c.set(CONF, sid, 'group', a.group && a.group != '' ? a.group : 'Manual');
+		c.set(CONF, sid, 'type', o.type);
+		c.set(CONF, sid, 'origin', 'manual');
+		if (o.type == 'awg') {
+			// AmneziaWG (Wave 3.1): junk-параметры в sing-box/xray
+			// outbound не выразить — живут UCI-опциями, интерфейс
+			// поднимает awg.sh. Без kmod нода бесполезна — не заводим.
+			if (!awg_available()) {
+				c.delete(CONF, sid);
+				return { ok: false, error: 'нода типа awg недоступна: не установлены kmod-amneziawg/amneziawg-tools' };
+			}
+			let endpoint = o.endpoint || '';
+			let server = o.server || '', port = o.server_port || 0;
+			if (endpoint != '') {
+				let m = match(endpoint, /^(\[[0-9a-fA-F:.]+\]|[^:]*):?([0-9]*)$/);
+				if (m) {
+					server = replace(m[1], /^\[|\]$/g, '');
+					if (m[2] != '') port = int(m[2]);
+				}
+			}
+			if (!o.private_key || !o.peer_public_key || server == '' || !port) {
+				c.delete(CONF, sid);
+				return { ok: false, error: 'awg: нужны private_key, peer_public_key и endpoint (host:port)' };
+			}
+			c.set(CONF, sid, 'server', server);
+			c.set(CONF, sid, 'port', '' + port);
+			c.set(CONF, sid, 'endpoint', server + ':' + port);
+			for (let f in [ 'private_key', 'peer_public_key', 'preshared_key',
+					'jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4',
+					'h1', 'h2', 'h3', 'h4', 'mtu', 'keepalive' ])
+				if (o[f] != null && '' + o[f] != '')
+					c.set(CONF, sid, f, '' + o[f]);
+			if (type(o.address) == 'array' && length(o.address) > 0) {
+				let al = [];
+				for (let x in o.address) push(al, '' + x);
+				c.set(CONF, sid, 'address', al);
+			} else if (o.address)
+				c.set(CONF, sid, 'address', [ '' + o.address ]);
+			else {
+				c.delete(CONF, sid);
+				return { ok: false, error: 'awg: нужен address (CIDR туннеля)' };
+			}
+		} else {
+			c.set(CONF, sid, 'server', '' + (o.server || ''));
+			c.set(CONF, sid, 'port', '' + (o.server_port || ''));
+		}
+		c.set(CONF, sid, 'raw', a.raw);
+		if (o.tls && o.tls.reality && o.tls.reality.enabled)
+			c.set(CONF, sid, 'reality', '1');
+		c.commit(CONF);
+		return { ok: true, id: sid };
+	},
+
+	del_node: function(a) {
+		let c = uc();
+		// чистим ссылки: активная нода и цепочка не должны протухнуть
+		let g = read_globals(c);
+		if (g.active_node == a.id)
+			c.set(CONF, 'globals', 'active_node', '');
+		let fb = c.get_all(CONF, 'fallback') || {};
+		if (type(fb.chain) == 'array' && length(fb.chain) > 0) {
+			let nc = [];
+			for (let n in fb.chain) if (n != a.id) push(nc, n);
+			c.set(CONF, 'fallback', 'chain', nc);
+		}
+		c.delete(CONF, a.id);
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	add_subscription: function(a) {
+		if (!a.label || type(a.url) != 'array' || length(a.url) == 0)
+			return { ok: false, error: 'нужны название и хотя бы одна ссылка' };
+		let c = uc();
+		// именованная секция: стабильный sid (origin нод, имя raw-файла),
+		// не зависит от cfgXXXX/@type[N] различий между прошивками
+		let slug = lc(a.label);
+		slug = replace(slug, /[^a-z0-9]+/g, '_');
+		slug = replace(slug, /^_+|_+$/g, '');
+		if (slug == '') slug = 'sub';
+		let sid = slug, n = 2;
+		while (c.get(CONF, sid, 'label') != null) {
+			sid = slug + '_' + n;
+			n++;
+		}
+		// cursor.add(conf, type, name) на ucode GL/24.x игнорирует name
+		// (создаёт анонимную) — именованную секцию создаём через set
+		c.set(CONF, sid, 'subscription');
+		c.set(CONF, sid, 'label', a.label);
+		c.set(CONF, sid, 'enabled', '1');
+		c.set(CONF, sid, 'url', a.url);
+		c.set(CONF, sid, 'last_good_url', '');
+		c.set(CONF, sid, 'user_agent', a.user_agent && a.user_agent != '' ? a.user_agent : 'sing-box');
+		c.set(CONF, sid, 'hwid', a.hwid ? '1' : '0');
+		c.set(CONF, sid, 'update_interval', '' + (a.update_interval || 21600));
+		c.set(CONF, sid, 'update_via_proxy', '1');
+		c.set(CONF, sid, 'last_update', '0');
+		c.commit(CONF);
+		// сразу тянем ноды в фоне
+		fs.popen(sprintf('/usr/share/morok/subscribe.sh %s >/dev/null 2>&1 &', sid));
+		return { ok: true, id: sid };
+	},
+
+	del_subscription: function(a) {
+		let c = uc();
+		if (c.get(CONF, a.id, 'label') == null)
+			return { ok: false, error: 'подписка не найдена' };
+		// чистим ноды этой подписки + ссылки на них
+		let g = read_globals(c);
+		let fb = c.get_all(CONF, 'fallback') || {};
+		let chain = type(fb.chain) == 'array' ? fb.chain : [];
+		let chain_dirty = false;
+		let doomed = [];
+		c.foreach(CONF, 'node', function(s) {
+			if (s.origin == a.id) push(doomed, s['.name']);
+		});
+		for (let id in doomed) {
+			if (g.active_node == id)
+				c.set(CONF, 'globals', 'active_node', '');
+			let nc = [];
+			for (let n in chain) if (n != id) push(nc, n);
+			if (length(nc) != length(chain)) { chain = nc; chain_dirty = true; }
+			c.delete(CONF, id);
+		}
+		if (chain_dirty)
+			c.set(CONF, 'fallback', 'chain', chain);
+		c.delete(CONF, a.id);
+		c.commit(CONF);
+		return { ok: true, removed_nodes: length(doomed) };
+	},
+
+	update_subscription: function(a) {
+		let c = uc();
+		if (c.get(CONF, a.id, 'label') == null)
+			return { ok: false, error: 'подписка не найдена' };
+		fs.popen(sprintf('/usr/share/morok/subscribe.sh %s >/dev/null 2>&1 &', a.id));
+		return { ok: true, note: 'обновление запущено' };
+	},
+
+	set_rule: function(a) {
+		let c = uc();
+		c.set(CONF, a.id, 'enabled', a.enabled ? '1' : '0');
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	add_rule: function(a) {
+		let c = uc();
+		// если match — id существующего источника, создаём source_list-правило (пресеты UI)
+		let src = null;
+		c.foreach(CONF, 'source', function(s) { if (s['.name'] == a.match) src = s['.name']; });
+		let sid = c.add(CONF, 'rule');
+		c.set(CONF, sid, 'label', a.label || a.match);
+		if (src) {
+			c.set(CONF, sid, 'match_type', 'source_list');
+			c.set(CONF, sid, 'source', src);
+		} else {
+			c.set(CONF, sid, 'match_type', 'custom');
+			c.set(CONF, sid, 'match', [ a.match ]);
+		}
+		c.set(CONF, sid, 'action', a.action || 'proxy');
+		c.set(CONF, sid, 'enabled', '1');
+		c.commit(CONF);
+		return { ok: true, id: sid };
+	},
+
+	del_rule: function(a) {
+		let c = uc();
+		c.delete(CONF, a.id);
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	rename_rule: function(a) {
+		if (!a.label || a.label == '')
+			return { ok: false, error: 'нужен label' };
+		let c = uc();
+		if (!c.get_all(CONF, a.id))
+			return { ok: false, error: 'правило не найдено: ' + a.id };
+		c.set(CONF, a.id, 'label', a.label);
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	reorder_rules: function(a) {
+		if (type(a.order) != 'array')
+			return { ok: false, error: 'order должен быть массивом id правил' };
+		let c = uc();
+		let cur = [];
+		c.foreach(CONF, 'rule', function(s) { push(cur, s['.name']); });
+		// order обязан быть перестановкой текущего набора id —
+		// иначе это не reorder, а потеря/добавка правил
+		let want = {};
+		for (let id in a.order) {
+			id = '' + id;
+			if (want[id])
+				return { ok: false, error: 'дубликат в order: ' + id };
+			want[id] = 1;
+		}
+		if (length(a.order) != length(cur))
+			return { ok: false, error: 'order должен содержать все правила ровно один раз' };
+		for (let id in cur)
+			if (!want[id])
+				return { ok: false, error: 'в order нет правила ' + id };
+		// cursor.reorder(conf, section, pos): позиция внутри своего типа
+		// секций; порядок foreach (а значит и gen_config) следует за ним
+		for (let i = 0; i < length(a.order); i++)
+			c.reorder(CONF, '' + a.order[i], i);
+		c.commit(CONF);
+		remap_rule_state(cur, a.order);
+		reload_async();
+		return { ok: true, order: a.order };
+	},
+
+	set_fallback: function(a) {
+		let c = uc();
+		if (a.fail_threshold > 0)
+			c.set(CONF, 'fallback', 'fail_threshold', '' + a.fail_threshold);
+		if (a.kill_switch != null && a.kill_switch != '')
+			c.set(CONF, 'fallback', 'kill_switch', a.kill_switch);
+		if (a.auto_return != null)
+			c.set(CONF, 'fallback', 'auto_return', a.auto_return ? '1' : '0');
+		if (a.test_url != null && a.test_url != '')
+			c.set(CONF, 'fallback', 'test_url', a.test_url);
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	set_global: function(a) {
+		let allowed = { enabled: 1, mode: 1, transparent: 1, antidpi: 1, wizard_done: 1, engine: 1, app_channel: 1 };
+		if (!allowed[a.field])
+			return { ok: false, error: 'недопустимое поле' };
+		// engine — выбор ядра прокси (Wave 3.2): переключение
+		// применяется методом apply (полный рестарт сервиса)
+		if (a.field == 'engine' && a.value != 'sing-box' && a.value != 'xray')
+			return { ok: false, error: 'engine должен быть sing-box|xray' };
+		// app_channel (Wave 4.1): канал самообновления; пусто = дефолтный
+		if (a.field == 'app_channel' && a.value != '' &&
+			match(a.value, /^https?:\/\/[^ \t'"\\]+$/) == null)
+			return { ok: false, error: 'app_channel должен быть http(s)-URL манифеста (пусто — канал по умолчанию)' };
+		let c = uc();
+		c.set(CONF, 'globals', a.field, a.value);
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	get_dns: function(a) {
+		let c = uc();
+		let d = c.get_all(CONF, 'dns') || {};
+		let g = read_globals(c);
+		return {
+			mode: d.mode || 'sing-box',
+			upstream: d.upstream || 'https://1.1.1.1/dns-query',
+			hijack: g.dns_hijack == '1'
+		};
+	},
+
+	set_dns: function(a) {
+		let c = uc();
+		if (a.mode != null) {
+			if (a.mode != 'sing-box' && a.mode != 'direct')
+				return { ok: false, error: 'mode должен быть sing-box|direct' };
+			// именованная секция: set(conf, name, type) — add() на
+			// ucode GL игнорирует имя (боевой урок TZ §2)
+			if (c.get_all(CONF, 'dns') == null)
+				c.set(CONF, 'dns', 'dns');
+			c.set(CONF, 'dns', 'mode', a.mode);
+		}
+		if (a.upstream != null) {
+			if (match(a.upstream, /^[^ \t'"\\]{1,200}$/) == null)
+				return { ok: false, error: 'недопустимый upstream' };
+			if (c.get_all(CONF, 'dns') == null)
+				c.set(CONF, 'dns', 'dns');
+			c.set(CONF, 'dns', 'upstream', a.upstream);
+		}
+		if (a.hijack != null)
+			c.set(CONF, 'globals', 'dns_hijack', a.hijack ? '1' : '0');
+		c.commit(CONF);
+		reload_async();
+		return { ok: true, note: 'DNS-настройки применяются' };
+	},
+
+	// ---------- Wave 1 ----------
+
+	set_chain: function(a) {
+		if (type(a.chain) != 'array')
+			return { ok: false, error: 'chain должен быть массивом id нод' };
+		let c = uc();
+		let have = {};
+		c.foreach(CONF, 'node', function(s) { have[s['.name']] = 1; });
+		let clean = [], dropped = [];
+		for (let id in a.chain) {
+			id = '' + id;
+			if (have[id]) push(clean, id);
+			else push(dropped, id);
+		}
+		if (length(clean) > 0)
+			c.set(CONF, 'fallback', 'chain', clean);
+		else
+			c.delete(CONF, 'fallback', 'chain');
+		c.commit(CONF);
+		reload_async();
+		let res = { ok: true, chain: clean };
+		if (length(dropped) > 0) res.dropped = dropped;
+		return res;
+	},
+
+	update_node: function(a) {
+		// правка только ручных нод: у нод подписки серверные поля
+		// перезапишет следующее обновление подписки
+		let c = uc();
+		let cur = c.get_all(CONF, a.id);
+		if (!cur)
+			return { ok: false, error: 'нода не найдена: ' + a.id };
+		if (cur.origin != 'manual')
+			return { ok: false, error: 'правка доступна только ручным нодам (origin=manual)' };
+		if (a.label != null && a.label != '')
+			c.set(CONF, a.id, 'label', a.label);
+		let o = (cur.raw && cur.raw != '') ? safe_json(cur.raw) : null;
+		if (a.server != null && a.server != '') {
+			c.set(CONF, a.id, 'server', a.server);
+			if (o) o.server = a.server;
+		}
+		if (a.port != null && '' + a.port != '') {
+			c.set(CONF, a.id, 'port', '' + a.port);
+			if (o) o.server_port = int(a.port);
+		}
+		if (o) c.set(CONF, a.id, 'raw', sprintf('%J', o));
+		c.commit(CONF);
+		reload_async();
+		return { ok: true, note: 'нода обновлена, конфиг применяется' };
+	},
+
+	devices: function(a) {
+		let c = uc();
+		let leases = read_dhcp_leases();
+		let neigh = read_neigh();
+		let out = [];
+		let seen = {};
+		// сконфигурированные устройства — с их маршрутами
+		c.foreach(CONF, 'device', function(s) {
+			let mac = lc(s.mac || '');
+			if (mac == '') return;
+			let l = leases[mac];
+			let nb = neigh[mac];
+			push(out, {
+				mac: mac,
+				ip: l ? l.ip : (nb ? nb.ip : ''),
+				hostname: l ? l.hostname : '',
+				label: s.label || '',
+				route: s.route || 'follow',
+				enabled: s.enabled == '1',
+				online: dev_online(mac, leases, neigh)
+			});
+			seen[mac] = 1;
+		});
+		// остальные DHCP-клиенты — чтобы фронт мог назначить маршрут
+		for (let mac, l in leases) {
+			if (seen[mac]) continue;
+			push(out, {
+				mac: mac,
+				ip: l.ip,
+				hostname: l.hostname,
+				label: '',
+				route: 'follow',
+				enabled: false,
+				online: dev_online(mac, leases, neigh)
+			});
+		}
+		return { devices: out };
+	},
+
+	set_device: function(a) {
+		let mac = lc(a.mac || '');
+		if (!valid_mac(mac))
+			return { ok: false, error: 'некорректный MAC: ' + (a.mac || '') };
+		let route = a.route || 'follow';
+		if (!match(route, /^(follow|direct|proxy|node:.+)$/))
+			return { ok: false, error: 'route должен быть follow|direct|proxy|node:<id>' };
+		let c = uc();
+		if (substr(route, 0, 5) == 'node:' && !c.get_all(CONF, substr(route, 5)))
+			return { ok: false, error: 'нода не найдена: ' + substr(route, 5) };
+		let sid = null;
+		c.foreach(CONF, 'device', function(s) {
+			if (lc(s.mac || '') == mac) sid = s['.name'];
+		});
+		if (!sid) sid = c.add(CONF, 'device');
+		c.set(CONF, sid, 'mac', mac);
+		c.set(CONF, sid, 'route', route);
+		if (a.label != null)
+			c.set(CONF, sid, 'label', a.label);
+		c.set(CONF, sid, 'enabled', (a.enabled == null || a.enabled) ? '1' : '0');
+		c.commit(CONF);
+		reload_async();
+		return { ok: true, id: sid, note: 'маршрут устройства применяется' };
+	},
+
+	del_device: function(a) {
+		let mac = lc(a.mac || '');
+		if (!valid_mac(mac))
+			return { ok: false, error: 'некорректный MAC: ' + (a.mac || '') };
+		let c = uc();
+		let sid = null;
+		c.foreach(CONF, 'device', function(s) {
+			if (lc(s.mac || '') == mac) sid = s['.name'];
+		});
+		if (!sid)
+			return { ok: false, error: 'устройство не настроено: ' + mac };
+		c.delete(CONF, sid);
+		c.commit(CONF);
+		reload_async();
+		return { ok: true };
+	},
+
+	set_source: function(a) {
+		let c = uc();
+		if (!c.get_all(CONF, a.id))
+			return { ok: false, error: 'источник не найден: ' + a.id };
+		if (a.enabled != null)
+			c.set(CONF, a.id, 'enabled', a.enabled ? '1' : '0');
+		if (a.url != null && a.url != '')
+			c.set(CONF, a.id, 'url', a.url);
+		if (a.update_interval != null && a.update_interval > 0)
+			c.set(CONF, a.id, 'update_interval', '' + a.update_interval);
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	update_source: function(a) {
+		let c = uc();
+		if (!c.get_all(CONF, a.id))
+			return { ok: false, error: 'источник не найден: ' + a.id };
+		fs.popen(sprintf('/usr/share/morok/ruleset_update.sh %s >/dev/null 2>&1 &', a.id));
+		return { ok: true, note: 'обновление источника запущено' };
+	},
+
+	read_log: function(a) {
+		let n = int(a.lines || 200);
+		if (n <= 0) n = 200;
+		if (n > 1000) n = 1000;
+		let raw = fs.readfile('/tmp/log/morok.log');
+		if (!raw || raw == '') return { log: '' };
+		let lines = split(raw, '\n');
+		// хвост файла обычно пустая строка после последнего \n
+		let last = length(lines);
+		if (last > 0 && lines[last - 1] == '') last--;
+		let start = last - n;
+		if (start < 0) start = 0;
+		let out = [];
+		for (let i = start; i < last; i++)
+			push(out, lines[i]);
+		return { log: join('\n', out) };
+	},
+
+	guardian_status: function(a) {
+		let c = uc();
+		let g = read_globals(c);
+		// демон сторожа: pidfile + kill -0 (pidof не видит sh-скрипт)
+		let running = false;
+		let pid = trim(sh('cat /var/etc/morok/guardian.pid'));
+		if (match(pid || '', /^[0-9]+$/) != null)
+			running = sh_rc('kill -0 ' + pid) == 0;
+		// guardian.state: "@rule[N]=fails:mode:since:lastprobe";
+		// в файле исторически встречаются дубликаты — последняя строка
+		// ключа побеждает (stmap перезаписывается по мере чтения)
+		let stmap = {};
+		let raw = fs.readfile('/var/etc/morok/guardian.state');
+		if (raw) {
+			for (let line in split(raw, '\n')) {
+				let eq = index(line, '=');
+				if (eq <= 0) continue;
+				stmap[substr(line, 0, eq)] = substr(line, eq + 1);
+			}
+		}
+		let out = [];
+		let idx = -1;
+		c.foreach(CONF, 'rule', function(s) {
+			idx++;
+			if (s.action != 'antidpi' || s.enabled != '1')
+				return;
+			let adaptive = s.adaptive == '1';
+			let fails = 0, mode = 'antidpi', last_probe = 0;
+			if (adaptive) {
+				let st = stmap['@rule[' + idx + ']'] || '0:antidpi:0:0';
+				let f = split(st, ':');
+				fails = int(f[0] || 0);
+				mode = f[1] || 'antidpi';
+				last_probe = int(f[3] || 0);
+			}
+			let state_text = 'оптимизация';
+			if (mode == 'proxy')
+				state_text = 'через VPN';
+			else if (adaptive && fails > 0)
+				state_text = 'следим';
+			push(out, {
+				id: s['.name'],
+				label: s.label || '',
+				mode: mode,
+				state_text: state_text,
+				adaptive: adaptive,
+				fails: fails,
+				last_probe: last_probe
+			});
+		});
+		return {
+			running: running,
+			engine: c.get(CONF, 'antidpi', 'engine') || 'none',
+			enabled: g.antidpi == '1',
+			antidpi_running: bin_running('nfqws2'),
+			rules: out
+		};
+	},
+
+	// ---------- Страница оптимизации ----------
+
+	get_antidpi: function(a) {
+		let c = uc();
+		let rules_count = 0;
+		c.foreach(CONF, 'rule', function(s) {
+			if (s.enabled == '1' && s.action == 'antidpi') rules_count++;
+		});
+		return {
+			engine: c.get(CONF, 'antidpi', 'engine') || 'none',
+			running: bin_running('nfqws2'),
+			strategy: c.get(CONF, 'antidpi', 'strategy') || 'youtube',
+			strategy_custom: c.get(CONF, 'antidpi', 'strategy_custom') || '',
+			strategies: antidpi_strategies(),
+			hostlist: read_antidpi_hostlist(),
+			rules_count: rules_count,
+			guardian: antidpi_guardian_summary(c)
+		};
+	},
+
+	set_antidpi: function(a) {
+		return set_antidpi_impl(a);
+	},
+
+	test_antidpi: function(a) {
+		let d = lc(a.domain || '');
+		d = replace(d, /^\.+|\.+$/g, '');
+		if (!valid_domain(d))
+			return { ok: false, error: 'некорректный домен: ' + (a.domain || '') };
+		// системный DNS роутера может быть недостоверен — резолвим через
+		// DoH по туннелю (схема guardian probe), потом пробуем ПРЯМОЙ путь
+		// по полученному IP: его пакеты проходят postrouting → nfqws2,
+		// если движок жив
+		let body = sh(sprintf("curl -s -x http://127.0.0.1:7890 -m 8 'https://1.1.1.1/dns-query?name=%s&type=A' -H 'accept: application/dns-json'", d));
+		let j = body ? safe_json(body) : null;
+		let ip = '';
+		if (j && type(j.Answer) == 'array') {
+			for (let ans in j.Answer) {
+				if (ans.type == 1 && match(ans.data || '', /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) != null) {
+					ip = ans.data;
+					break;
+				}
+			}
+		}
+		if (ip == '')
+			return {
+				ok: false, ip: '', code: '000', time_ms: 0,
+				note: 'DoH-резолв ' + d + ' через туннель не удался — без корректного IP проверка невозможна (системный DNS недостоверен). Проверьте, что туннель жив.'
+			};
+		let out = trim(sh(sprintf("curl -s -o /dev/null -m 8 -w '%%{http_code} %%{time_total}' --resolve '%s:443:%s' 'https://%s/'", d, ip, d)));
+		let pf = split(out != '' ? out : '000 0', ' ');
+		let code = pf[0];
+		let sec = (length(pf) > 1 ? pf[1] : '0') * 1;
+		let time_ms = int(sec * 1000);
+		let running = bin_running('nfqws2');
+		let note;
+		if (code == '000') {
+			note = running
+				? 'Доставки нет: TLS к ' + d + ' напрямую умер, хотя nfqws2 работает — профиль не подходит. Попробуйте другой или переведите правило в proxy.'
+				: 'TLS к ' + d + ' напрямую умер, и движок nfqws2 не запущен — включите движок или переведите правило в proxy.';
+		} else {
+			note = 'оптимизация сработала: TLS к ' + d +
+				' прошёл напрямую (HTTP ' + code + ' за ' + time_ms + ' мс)';
+			if (!running)
+				note += '. Внимание: nfqws2 не запущен — домен, видимо, доставляется и без оптимизации';
+		}
+		return { ok: true, ip: ip, code: code, time_ms: time_ms, note: note };
+	},
+
+	// ---------- Сканер профилей доставки ----------
+
+	scan_start: function(a) {
+		if (scan_pid_alive())
+			return { ok: false, error: 'сканирование уже идёт — дождитесь конца или остановите' };
+		// домены: array | строка через запятую | дефолт
+		let doms = [];
+		if (type(a.domains) == 'array') doms = a.domains;
+		else if (type(a.domains) == 'string' && trim(a.domains) != '')
+			doms = split(a.domains, ',');
+		if (length(doms) == 0) doms = [ 'youtube.com', 'googlevideo.com' ];
+		if (length(doms) > 4)
+			return { ok: false, error: 'не больше 4 доменов за прогон' };
+		let clean = [];
+		for (let d in doms) {
+			d = lc(trim(d));
+			d = replace(d, /^\.+|\.+$/g, '');
+			if (!valid_domain(d))
+				return { ok: false, error: 'некорректный домен: ' + d };
+			push(clean, d);
+		}
+		if (!fs.stat(SCAN_PROFILES))
+			return { ok: false, error: 'нет ' + SCAN_PROFILES + ' — обновите пакет' };
+		let r = sh_full(SCAN_SH + ' start ' + join(',', clean));
+		if (r.rc != 0)
+			return { ok: false, error: trim(r.out) != '' ? trim(r.out) : 'сканер не запустился' };
+		return { ok: true, total: scan_profiles_count(), domains: clean };
+	},
+
+	scan_status: function(a) {
+		let raw = fs.readfile(SCAN_STATE);
+		let st = raw ? safe_json(raw) : null;
+		if (type(st) != 'object')
+			return { running: false, done: 0, total: scan_profiles_count(), results: [] };
+		// state говорит running, но прогон мёртв (роутер ребутали, kill -9) —
+		// честно помечаем обрыв; lock-файл при этом мог остаться — guardian
+		// молчит, но это безобидно (просто пропускает probe)
+		if (st.running == true && !scan_pid_alive()) {
+			st.running = false;
+			st.stale = true;
+			st.error = 'прогон оборвался (процесс сканера не найден)';
+		}
+		return st;
+	},
+
+	scan_apply: function(a) {
+		if (scan_pid_alive())
+			return { ok: false, error: 'сканирование ещё идёт — применять профиль рано' };
+		let id = trim(a.id || '');
+		if (id == '')
+			return { ok: false, error: 'не передан id профиля' };
+		let p = scan_profile_by_id(id);
+		if (!p)
+			return { ok: false, error: 'профиль не найден в батарее: ' + id };
+		// %HL% → hostlist-аргумент, как делает сканер (custom-стратегия
+		// в antidpi.sh подставляется как есть — hostlist указываем явно)
+		let hl = fs.stat(ANTIDPI_HOSTLIST) ? '--hostlist=' + ANTIDPI_HOSTLIST : '';
+		let tcp = replace(p.tcp, /%HL%/g, hl);
+		let udp = replace(p.udp, /%HL%/g, hl);
+		let combined = tcp;
+		if (trim(udp) != '') combined += ' --new ' + udp;
+		// применяем через set_antidpi: там dry-run проверка аргументов,
+		// сверка lua-функций и откат UCI при провале
+		let res = set_antidpi_impl({
+			strategy: 'custom',
+			engine: 'zapret2',
+			strategy_custom: combined
+		});
+		if (res == null) res = { ok: false, error: 'set_antidpi не ответил' };
+		res.id = p.id;
+		res.label = p.label;
+		return res;
+	},
+
+	scan_stop: function(a) {
+		if (!scan_pid_alive())
+			return { ok: false, error: 'сканирование не идёт' };
+		let raw = fs.readfile(SCAN_PIDFILE);
+		let pid = int(trim(raw));
+		sh_rc('kill ' + pid);
+		// прогон по TERM восстанавливает исходную стратегию (trap):
+		// engine stop + antidpi.sh restart — это секунды, дожидаемся
+		let i = 0;
+		while (i < 40) {
+			if (!scan_pid_alive()) break;
+			sleep(500);
+			i++;
+		}
+		if (scan_pid_alive())
+			return { ok: false, error: 'сканер не остановился за 20 секунд' };
+		return { ok: true, running: bin_running('nfqws2'), note: 'сканирование остановлено, исходная стратегия восстановлена' };
+	},
+
+	// ---------- Wave 2 ----------
+
+	diagnose: function(a) {
+		let c = uc();
+		let g = read_globals(c);
+		let steps = [];
+		for (let id in DIAG_ORDER)
+			push(steps, DIAG_FN[id](c, g));
+		return { steps: steps };
+	},
+
+	diagnose_step: function(a) {
+		let id = a.id || '';
+		let fn = DIAG_FN[id];
+		if (!fn)
+			return { ok: false, error: 'неизвестный шаг: ' + id +
+				' (доступны: ' + join(', ', DIAG_ORDER) + ')' };
+		return fn(uc(), read_globals(uc()));
+	},
+
+	run_fix: function(a) {
+		let id = a.id || '';
+		if (id == 'service' || id == 'tunnel') {
+			// синхронно: gen_config + check внутри init занимают секунды
+			let r = sh_full('/etc/init.d/morok restart');
+			let ok = sb_running();
+			return {
+				ok: ok,
+				note: ok ? 'сервис перезапущен, sing-box жив'
+					: 'сервис перезапущен, но sing-box не поднялся — смотрите logread'
+			};
+		}
+		if (id == 'config') {
+			let gen = morok_engine() == 'xray'
+				? 'ucode /usr/share/morok/xray_gen.uc'
+				: 'ucode /usr/share/morok/gen_config.uc';
+			let r = sh_full(gen);
+			if (r.rc != 0)
+				return { ok: false, error: 'генерация конфига провалилась: ' + trim(r.out) };
+			let chk = sh_rc(core_check_cmd());
+			if (chk != 0)
+				return { ok: false, error: 'сгенерированный конфиг не проходит проверку движка' };
+			if (sb_running()) sh_rc('/etc/init.d/morok reload');
+			return { ok: true, note: 'конфиг перегенерирован и валиден' };
+		}
+		if (id == 'dns') {
+			sh_rc('/etc/init.d/dnsmasq restart');
+			return { ok: true, note: 'dnsmasq перезапущен; если апстрим провайдера отравляет ответы — перезапуск не вылечит, полагаемся на sing-box DNS' };
+		}
+		if (id == 'dpi' || id == 'antidpi') {
+			let r = sh_full('/usr/share/morok/antidpi.sh restart');
+			sleep(1000);
+			let ok = bin_running('nfqws2');
+			return {
+				ok: ok,
+				note: ok ? 'движок nfqws2 перезапущен и жив'
+					: 'движок не поднялся — смотрите /tmp/log/morok.log (нет бинаря/kmod-nft-queue/правил antidpi?)'
+			};
+		}
+		if (id == 'lists') {
+			let r = sh_full('/usr/share/morok/ruleset_update.sh auto');
+			let ok = r.rc == 0;
+			return {
+				ok: ok,
+				note: ok ? 'списки обновлены (auto-режим: только протухшие)'
+					: 'обновление списков завершилось с ошибкой: ' + trim(r.out)
+			};
+		}
+		return { ok: false, error: 'неизвестный fix: ' + id };
+	},
+
+	backup: function(a) {
+		let c = uc();
+		let dump = {};
+		for (let t in SECTION_TYPES) {
+			c.foreach(CONF, t, function(s) { dump[s['.name']] = s; });
+		}
+		return { json: sprintf('%J', dump) };
+	},
+
+	restore: function(a) {
+		if (!a.json || a.json == '')
+			return { ok: false, error: 'пустой json' };
+		let dump = safe_json(a.json);
+		if (type(dump) != 'object' || length(keys(dump)) == 0)
+			return { ok: false, error: 'json не похож на бэкап morok' };
+		// бэкап обязан содержать ядро конфига — иначе это не наш бэкап,
+		// а что-то стороннее, и стирать рабочий конфиг ради него нельзя
+		for (let req in [ 'globals', 'fallback', 'antidpi' ]) {
+			if (type(dump[req]) != 'object' || dump[req]['.type'] != req)
+				return { ok: false, error: 'бэкап неполный: нет обязательной секции ' + req };
+		}
+		let known = {};
+		for (let t in SECTION_TYPES) known[t] = 1;
+		// валидация структуры до любой записи
+		for (let name, s in dump) {
+			if (match(name, /^[A-Za-z0-9_]+$/) == null)
+				return { ok: false, error: 'недопустимое имя секции: ' + name };
+			if (type(s) != 'object' || type(s['.type']) != 'string' || !known[s['.type']])
+				return { ok: false, error: 'секция ' + name + ': отсутствует или неизвестен .type' };
+			for (let k, v in s) {
+				if (substr(k, 0, 1) == '.') continue;
+				if (type(v) == 'string') continue;
+				if (type(v) == 'array') {
+					for (let item in v)
+						if (type(item) != 'string')
+							return { ok: false, error: 'секция ' + name + ': список ' + k + ' содержит не строку' };
+					continue;
+				}
+				return { ok: false, error: 'секция ' + name + ': недопустимое значение опции ' + k };
+			}
+		}
+		// автобэкап текущего конфига (только fs, без shell)
+		let cur = fs.readfile('/etc/config/morok');
+		if (cur) fs.writefile('/etc/config/morok.autobak', cur);
+		// пересборка строго через uci-cursor — exec-инъекций нет by design.
+		// Все секции восстанавливаем именованными с прежними именами
+		// (в т.ч. бывшие анонимные cfgXXXX): так не протухают ссылки
+		// fallback.chain, globals.active_node, origin нод, device routes.
+		let c = uc();
+		let doomed = [];
+		for (let t in SECTION_TYPES)
+			c.foreach(CONF, t, function(s) { push(doomed, s['.name']); });
+		for (let n in doomed) c.delete(CONF, n);
+		for (let name, s in dump) {
+			// ВНИМАНИЕ: cursor.add(conf, type, name) на ucode GL/24.x
+			// молча игнорирует name и создаёт анонимную секцию —
+			// именованную создаём через set(conf, name, type)
+			c.set(CONF, name, s['.type']);
+			for (let k, v in s) {
+				if (substr(k, 0, 1) == '.') continue;
+				c.set(CONF, name, k, v);
+			}
+		}
+		c.commit(CONF);
+		reload_async();
+		return {
+			ok: true,
+			sections: length(keys(dump)),
+			note: 'конфиг восстановлен, прежний сохранён в /etc/config/morok.autobak, сервис перезагружается'
+		};
+	},
+
+	components: function(a) {
+		let c = uc();
+		let out = [];
+		let covered = {};
+		c.foreach(CONF, 'component', function(s) {
+			let name = s.name || s['.name'];
+			let path = (s.path && s.path != '') ? s.path : BIN_DIR + '/' + name;
+			if (!valid_bin_path(path)) path = BIN_DIR + '/' + name;
+			let exists = fs.stat(path) != null;
+			let ver = exists ? bin_version(path, name) : '';
+			if (ver == '') ver = s.version || '';
+			push(out, {
+				name: name,
+				version: ver,
+				path: path,
+				sha256: exists ? bin_sha256_cached(path) : '',
+				installed: exists,
+				channel: (s.channel_url && s.channel_url != '') ? true : false
+			});
+			covered[name] = 1;
+		});
+		// бинари без UCI-секции (конфиг старше файлов пакета)
+		for (let n in KNOWN_BINS) {
+			if (covered[n]) continue;
+			let path = BIN_DIR + '/' + n;
+			if (fs.stat(path) == null) continue;
+			push(out, {
+				name: n,
+				version: bin_version(path, n),
+				path: path,
+				sha256: bin_sha256_cached(path),
+				installed: true,
+				channel: false
+			});
+		}
+		return { components: out };
+	},
+
+	check_update: function(a) {
+		let name = a.name || '';
+		if (match(name, /^[A-Za-z0-9_.-]+$/) == null)
+			return { ok: false, error: 'недопустимое имя компонента' };
+		let c = uc();
+		let sec = find_component(c, name);
+		if (!sec)
+			return { ok: false, error: 'компонент не найден: ' + name };
+		if (!sec.channel_url || sec.channel_url == '')
+			return { ok: false, error: 'канал не настроен' };
+		let body = fetch_text(sec.channel_url);
+		if (body == null)
+			return { ok: false, error: 'манифест канала недоступен: ' + sec.channel_url };
+		let m = safe_json(body);
+		if (!m || type(m) != 'object' || !m.version)
+			return { ok: false, error: 'манифест не в нашем формате (нет version)' };
+		let path = (sec.path && sec.path != '' && valid_bin_path(sec.path)) ? sec.path : BIN_DIR + '/' + name;
+		let cur = fs.stat(path) ? bin_version(path, name) : (sec.version || '');
+		return {
+			name: name,
+			current: cur,
+			latest: '' + m.version,
+			update_available: version_newer('' + m.version, cur)
+		};
+	},
+
+	rollback: function(a) {
+		let name = a.name || '';
+		if (match(name, /^[A-Za-z0-9_.-]+$/) == null)
+			return { ok: false, error: 'недопустимое имя компонента' };
+		let c = uc();
+		let sec = find_component(c, name);
+		let path = (sec && sec.path && sec.path != '' && valid_bin_path(sec.path))
+			? sec.path : BIN_DIR + '/' + name;
+		let prev = BIN_DIR + '/.prev/' + name;
+		if (fs.stat(prev) == null)
+			return { ok: false, error: 'нет сохранённой предыдущей версии для ' + name +
+				' (она появляется после первого update_component)' };
+		if (fs.stat(path) == null)
+			return { ok: false, error: 'текущий бинарь отсутствует: ' + path };
+		// бэкап текущего → ставим .prev атомарно (cp+mv в пределах одной fs)
+		let r = sh_full(sprintf('cp -p %s %s.rolltmp && cp -p %s %s.new && mv %s.new %s',
+			path, prev, prev, path, path, path));
+		if (r.rc != 0) {
+			sh_full('rm -f ' + prev + '.rolltmp ' + path + '.new');
+			return { ok: false, error: 'подмена не удалась: ' + trim(r.out) };
+		}
+		// рестарт по типу компонента
+		let ok = true;
+		if (name == 'sing-box') {
+			sh_rc('/etc/init.d/morok restart');
+			ok = sb_running();
+		} else if (name == 'nfqws2') {
+			sh_rc('/usr/share/morok/antidpi.sh restart');
+			sleep(1000);
+			ok = bin_running('nfqws2') || c.get(CONF, 'antidpi', 'engine') != 'zapret2';
+		}
+		if (!ok) {
+			// сервис не поднялся на старом бинаре — возвращаем как было
+			sh_full(sprintf('mv %s.rolltmp %s', prev, path));
+			return { ok: false, error: 'сервис не поднялся после отката — восстановлен текущий бинарь' };
+		}
+		// откаченный (более новый) бинарь кладём в .prev — второй rollback
+		// откатывает откат
+		sh_full(sprintf('mv %s.rolltmp %s', prev, prev));
+		// кэш sha256 инвалидируется сам (mtime сменился), version в UCI освежаем
+		let ver = bin_version(path, name);
+		if (sec && ver != '') {
+			c.set(CONF, sec['.name'], 'version', ver);
+			c.commit(CONF);
+		}
+		return { ok: true, note: sprintf('%s откачен на версию %s, сервис перезапущен', name, ver) };
+	},
+
+	update_component: function(a) {
+		let name = a.name || '';
+		if (match(name, /^[A-Za-z0-9_.-]+$/) == null)
+			return { ok: false, error: 'недопустимое имя компонента' };
+		let c = uc();
+		let sec = null;
+		c.foreach(CONF, 'component', function(s) {
+			if ((s.name || s['.name']) == name) sec = s;
+		});
+		if (!sec) {
+			let known = {};
+			for (let n in KNOWN_BINS) known[n] = 1;
+			if (known[name])
+				return { ok: false, error: 'канал обновлений не настроен для ' + name + ' (нет UCI-секции component)' };
+			return { ok: false, error: 'компонент не найден: ' + name };
+		}
+		// честный ответ, пока канала нет — не имитируем обновление
+		if (!sec.channel_url || sec.channel_url == '')
+			return { ok: false, error: 'канал обновлений не настроен для ' + name };
+		let r = sh_full('/usr/share/morok/bin_update.sh ' + name);
+		let msg = trim(r.out);
+		if (r.rc == 0)
+			return { ok: true, note: msg != '' ? msg : 'компонент обновлён' };
+		return { ok: false, error: msg != '' ? msg : 'обновление не удалось' };
+	},
+
+	set_subscription: function(a) {
+		let c = uc();
+		if (!c.get_all(CONF, a.id))
+			return { ok: false, error: 'подписка не найдена: ' + a.id };
+		if (a.label != null && a.label != '')
+			c.set(CONF, a.id, 'label', a.label);
+		if (a.enabled != null)
+			c.set(CONF, a.id, 'enabled', a.enabled ? '1' : '0');
+		if (a.update_interval != null && int(a.update_interval) >= 0)
+			c.set(CONF, a.id, 'update_interval', '' + int(a.update_interval));
+		if (a.user_agent != null && a.user_agent != '')
+			c.set(CONF, a.id, 'user_agent', a.user_agent);
+		if (a.hwid != null)
+			c.set(CONF, a.id, 'hwid', a.hwid ? '1' : '0');
+		c.commit(CONF);
+		return { ok: true };
+	},
+
+	check_domain: function(a) {
+		let d = lc(a.domain || '');
+		d = replace(d, /^\.+|\.+$/g, '');
+		if (!valid_domain(d))
+			return { ok: false, error: 'некорректный домен: ' + (a.domain || '') };
+		// суффиксные варианты: a.b.c.com → [a.b.c.com, b.c.com, c.com];
+		// до последних двух меток (голый TLD не проверяем — бессмысленно)
+		let parts = split(d, '.');
+		let variants = [];
+		for (let i = 0; i < length(parts) - 1; i++)
+			push(variants, join('.', slice(parts, i)));
+
+		let c = uc();
+		let matches = [];
+		let skipped = {};
+		c.foreach(CONF, 'rule', function(s) {
+			if (s.enabled != '1') return;
+			let mt = s.match_type || 'custom';
+			let hit = false;
+			if (mt == 'custom') {
+				let mm = type(s.match) == 'array' ? s.match : (s.match ? [ s.match ] : []);
+				for (let m in mm) {
+					m = lc(replace(m, /\*/g, ''));
+					m = replace(m, /^\.+|\.+$/g, '');
+					if (m != '' && domain_match(d, m)) { hit = true; break; }
+				}
+			} else if (mt == 'source_list') {
+				let src = s.source || '';
+				let f = LIST_DIR + '/' + src + '.json';
+				if (fs.stat(f) == null) {
+					skipped[(s.label || mt) + ': список ' + src + ' не скачан'] = 1;
+				} else {
+					// список — однострочный JSON массива domain_suffix;
+					// grep -F по '"вариант"' — точное попадание, без regex
+					for (let v in variants) {
+						if (sh_rc(sprintf('grep -qF \'"%s"\' %s', v, f)) == 0) {
+							hit = true;
+							break;
+						}
+					}
+				}
+			} else if (mt == 'final') {
+				hit = true;
+			} else {
+				// geosite/geosite_geoip: .srs бинарный, но рядом лежат
+				// текстовые source-списки (rulesets/src/<set>.txt) — точный
+				// grep по суффиксным вариантам. geoip — только IP, домен не матчим.
+				let sets = type(s.match) == 'array' ? s.match : (s.match ? [ s.match ] : []);
+				if (length(sets) == 0 && s.source) sets = [ s.source ];
+				let checked = 0;
+				for (let set in sets) {
+					// имена в правилах без префикса: youtube → geosite-youtube.txt
+					let f = '/usr/share/morok/rulesets/src/' + set + '.txt';
+					if (fs.stat(f) == null) {
+						f = '/usr/share/morok/rulesets/src/geosite-' + set + '.txt';
+						if (fs.stat(f) == null) continue;
+					}
+					checked++;
+					for (let v in variants) {
+						if (sh_rc(sprintf('grep -qFx \'%s\' %s', v, f)) == 0) {
+							hit = true;
+							break;
+						}
+					}
+					if (hit) break;
+				}
+				if (!hit && checked == 0)
+					skipped[(s.label || mt) + ' (' + mt + ': нет source-списка)'] = 1;
+			}
+			if (hit)
+				push(matches, {
+					rule_id: s['.name'],
+					rule_label: s.label || '',
+					source: mt == 'source_list' ? (s.source || '') : mt,
+					action: s.action || 'proxy'
+				});
+		});
+		let res = { matches: matches };
+		let sk = keys(skipped);
+		res.coverage = 'проверены: custom-правила, source_list-списки, geosite (текстовые source-листы), final-правило; НЕ проверяются: geoip (только IP)';
+		if (length(sk) > 0) res.skipped = sk;
+		return res;
+	},
+
+	// ---------- Wave 4 ----------
+
+	// проверка обновления приложения: вся логика (PM-детект, semver,
+	// per-arch манифест) в app_update.sh --check, который печатает
+	// готовый JSON; ошибки скрипта идут текстом "ERROR: …"
+	app_check: function(a) {
+		try {
+			let r = sh_full(APP_UPDATE_SH + ' --check');
+			let j = safe_json(trim(r.out));
+			if (j == null || type(j) != 'object')
+				return { ok: false, error: trim(r.out) != '' ? trim(r.out)
+					: 'app_update.sh --check не ответил (rc=' + r.rc + ')' };
+			return j;
+		} catch (e) {
+			return { ok: false, error: 'app_check: ' + e };
+		}
+	},
+
+	// полный цикл обновления приложения: скачивание → sha256 →
+	// opkg/apk install → ожидание сервиса. Отката пакета нет by design
+	// (см. заголовок app_update.sh): конфиг бэкапится до установки.
+	app_update: function(a) {
+		try {
+			let cmd = APP_UPDATE_SH + ' update';
+			if (a != null && a.force == true) cmd += ' --force';
+			let r = sh_full(cmd);
+			let log = trim(r.out);
+			if (length(log) > 4000) log = substr(log, length(log) - 4000);
+			if (r.rc != 0)
+				return {
+					ok: false,
+					log: log,
+					error: 'обновление не удалось — подробности в log'
+				};
+			let ver = trim(sh(APP_UPDATE_SH + ' --current'));
+			return { ok: true, version: ver, log: log };
+		} catch (e) {
+			return { ok: false, error: 'app_update: ' + e };
+		}
+	},
+
+	// маркет пресетов правил (Wave 4.2): свежий каталог с канала
+	// (рядом с манифестом), кэш в tmpfs 6ч, фоллбэк на вшитый
+	market: function(a) {
+		try {
+			let c = uc();
+			let url = market_catalog_url(c);
+			if (url != null) {
+				let body = fetch_text(url);
+				if (body != null) {
+					let j = market_validate(safe_json(body));
+					if (j != null) {
+						let f = fs.open(MARKET_CACHE + '.tmp', 'w');
+						if (f) {
+							f.write(sprintf('%J', { ts: time(), data: j }));
+							f.close();
+							fs.rename(MARKET_CACHE + '.tmp', MARKET_CACHE);
+						}
+						return j;
+					}
+				}
+				let raw = fs.readfile(MARKET_CACHE);
+				let cc = raw ? safe_json(raw) : null;
+				if (type(cc) == 'object' && type(cc.data) == 'object' &&
+					int(cc.ts) > time() - MARKET_TTL)
+					return cc.data;
+			}
+			let raw = fs.readfile(PRESETS_BUILTIN);
+			let j = market_validate(raw ? safe_json(raw) : null);
+			if (j != null) return j;
+			return { presets: [] };
+		} catch (e) {
+			return { presets: [], error: 'market: ' + e };
+		}
+	},
+
+	apply: function(a) {
+		fs.popen('/etc/init.d/morok restart >/dev/null 2>&1 &');
+		return { ok: true, note: 'перезапуск запущен' };
+	}
+};
+
+// ---------- схема для `list` (типы — для валидации rpcd) ----------
+let schema = {
+	status: {},
+	nodes: {},
+	rules: {},
+	chain: {},
+	sources: {},
+	test_nodes: {},
+	set_node: { id: 'string', enabled: 'bool' },
+	select_node: { id: 'string' },
+	add_node: { label: 'string', raw: 'string', group: 'string' },
+	del_node: { id: 'string' },
+	add_subscription: { label: 'string', url: 'array', update_interval: 'int32', user_agent: 'string', hwid: 'bool' },
+	update_subscription: { id: 'string' },
+	del_subscription: { id: 'string' },
+	set_rule: { id: 'string', enabled: 'bool' },
+	add_rule: { label: 'string', match: 'string', action: 'string' },
+	del_rule: { id: 'string' },
+	rename_rule: { id: 'string', label: 'string' },
+	reorder_rules: { order: 'array' },
+	set_fallback: { fail_threshold: 'int32', kill_switch: 'string', auto_return: 'bool', test_url: 'string' },
+	set_global: { field: 'string', value: 'string' },
+	set_chain: { chain: 'array' },
+	update_node: { id: 'string', label: 'string', server: 'string', port: 'string' },
+	devices: {},
+	set_device: { mac: 'string', route: 'string', label: 'string', enabled: 'bool' },
+	del_device: { mac: 'string' },
+	set_source: { id: 'string', enabled: 'bool', url: 'string', update_interval: 'int32' },
+	update_source: { id: 'string' },
+	read_log: { lines: 'int32' },
+	guardian_status: {},
+	diagnose: {},
+	diagnose_step: { id: 'string' },
+	run_fix: { id: 'string' },
+	get_dns: {},
+	set_dns: { mode: 'string', upstream: 'string', hijack: 'bool' },
+	backup: {},
+	restore: { json: 'string' },
+	components: {},
+	update_component: { name: 'string' },
+	check_update: { name: 'string' },
+	rollback: { name: 'string' },
+	set_subscription: { id: 'string', label: 'string', enabled: 'bool', update_interval: 'int32', user_agent: 'string', hwid: 'bool' },
+	check_domain: { domain: 'string' },
+	get_antidpi: {},
+	set_antidpi: { strategy: 'string', engine: 'string', strategy_custom: 'string' },
+	test_antidpi: { domain: 'string' },
+	scan_start: { domains: 'array' },
+	scan_status: {},
+	scan_apply: { id: 'string' },
+	scan_stop: {},
+	app_check: {},
+	app_update: { force: 'bool' },
+	market: {},
+	apply: {}
+};
+
+// ---------- диспетчер exec-протокола ----------
+let cmd = length(ARGV) > 0 ? ARGV[0] : '';
+
+if (cmd == 'list') {
+	printf('%J\n', schema);
+} else if (cmd == 'call') {
+	let method = length(ARGV) > 1 ? ARGV[1] : '';
+	let raw = fs.stdin ? fs.stdin.read('all') : fs.open('/dev/stdin').read('all');
+	let args = (raw && raw != '') ? safe_json(raw) : {};
+	if (type(args) != 'object') args = {};
+	let fn = methods[method];
+	if (fn) {
+		let res = fn(args);
+		printf('%J\n', res != null ? res : {});
+	} else {
+		printf('%J\n', { ok: false, error: 'unknown method: ' + method });
+	}
+}

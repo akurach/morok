@@ -1,0 +1,26 @@
+{
+  "format": 2,
+  "channel": "stable",
+  "updated_at": "2026-10-21",
+  "note": "Агрегатный индекс. bin_update.sh читает per-component манифесты (manifest_url), формат v2 per-arch — см. W3_NOTES_D.md.",
+  "components": {
+    "nfqws2": {
+      "version": "1.0.5.2",
+      "manifest": "channel/bin/nfqws2.json",
+      "manifest_url": "https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/bin/nfqws2.json",
+      "arch": ["aarch64_cortex-a53"]
+    },
+    "sing-box": {
+      "version": "1.14.0",
+      "manifest": "channel/bin/sing-box.json",
+      "manifest_url": "https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/bin/sing-box.json",
+      "arch": ["aarch64_cortex-a53"]
+    },
+    "xray": {
+      "version": "26.9.9",
+      "manifest": "channel/bin/xray.json",
+      "manifest_url": "https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/bin/xray.json",
+      "arch": ["aarch64_cortex-a53"]
+    }
+  }
+}
