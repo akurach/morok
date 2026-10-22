@@ -109,36 +109,57 @@ write_conf() {
 
 go_pidfile() { echo "$RUN_DIR/$1.go.pid"; }
 
-go_daemon_running() {
-	# $1=ifname; жив ли наш amneziawg-go (pidfile + kill -0)
-	local pf
-	pf=$(go_pidfile "$1")
-	[ -f "$pf" ] || return 1
-	local pid
-	pid=$(cat "$pf" 2>/dev/null)
-	case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-	kill -0 "$pid" 2>/dev/null
+go_find_pid() {
+	# pid демона amneziawg-go, обслуживающего $1, — по /proc/*/cmdline.
+	# Страховка к pidfile: amneziawg-go без -f сам уходит в фон, и $!
+	# указывает на недолгоживущего родителя, а не на демона
+	local ifname=$1 d pid args
+	for d in /proc/[0-9]*; do
+		pid=${d#/proc/}
+		args=$(tr '\0' ' ' < $d/cmdline 2>/dev/null)
+		case "$args" in
+			"$GO_BIN $ifname "*|"$GO_BIN -f $ifname "*|"$GO_BIN --foreground $ifname "*)
+				echo $pid
+				return 0
+				;;
+		esac
+	done
+	return 1
 }
 
-stop_go_daemon() {
-	# $1=ifname; гасим демона amneziawg-go, если он наш (pidfile)
+go_daemon_running() {
+	# $1=ifname; жив ли наш amneziawg-go (pidfile + kill -0, фоллбэк cmdline)
 	local pf pid
 	pf=$(go_pidfile "$1")
 	pid=$(cat "$pf" 2>/dev/null)
-	case "$pid" in ''|*[!0-9]*) pid='' ;; esac
-	if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+	case "$pid" in ''|*[!0-9]*) ;; *)
+		kill -0 "$pid" 2>/dev/null && return 0 ;;
+	esac
+	go_find_pid "$1" >/dev/null 2>&1
+}
+
+stop_go_daemon() {
+	# $1=ifname; гасим демона amneziawg-go: и по pidfile, и по cmdline
+	# (pidfile мог протухнуть/не соответствовать демону)
+	local ifname=$1 pf pid i
+	pf=$(go_pidfile "$ifname")
+	for pid in $(cat "$pf" 2>/dev/null) $(go_find_pid "$ifname"); do
+		case "$pid" in ''|*[!0-9]*) continue ;; esac
+		kill -0 "$pid" 2>/dev/null || continue
 		kill "$pid" 2>/dev/null
 		# tun-интерфейс умирает вместе с демоном; ждём недолго
-		local i=0
+		i=0
 		while [ $i -lt 20 ] && kill -0 "$pid" 2>/dev/null; do
 			sleep 0.1; i=$((i + 1))
 		done
 		kill -9 "$pid" 2>/dev/null
-	fi
+	done
 	rm -f "$pf"
 }
 
 # userspace-подъём: демон amneziawg-go создаёт TUN-интерфейс $ifname.
+# -f = foreground: демонизацию делаем мы сами (& + pidfile), иначе
+# бинарь форкается и pidfile показывает на мёртвого родителя.
 # Отвязка fd по уроку 13 (guardian.sh): закрываем procd-lock (1000/1001),
 # reload-lock (9) и наш flock (200) — демон не должен их наследовать,
 # иначе /etc/init.d/morok stop|restart и повторный awg.sh start повиснут.
@@ -151,7 +172,7 @@ start_go_daemon() {
 	(
 		exec 200>&- 1000>&- 1001>&- 9>&- 2>/dev/null
 		exec </dev/null >>$MOROK_LOG 2>&1
-		exec $GO_BIN $ifname
+		exec $GO_BIN -f $ifname
 	) &
 	echo $! > "$pf"
 	# демон создаёт интерфейс не мгновенно — ждём до 5 с
@@ -257,7 +278,9 @@ status() {
 	dump_nodes | while IFS='|' read -r idx id rest; do
 		[ -n "$id" ] || continue
 		local extra=''
-		go_daemon_running "awg-$id" && extra=" (демон amneziawg-go жив, pid $(cat $(go_pidfile awg-$id)))"
+		local gopid
+		gopid=$(go_find_pid "awg-$id" 2>/dev/null)
+		[ -n "$gopid" ] && extra=" (демон amneziawg-go жив, pid $gopid)"
 		if ip link show dev "awg-$id" >/dev/null 2>&1; then
 			echo "нода $id: интерфейс awg-$id UP$extra"
 		else
