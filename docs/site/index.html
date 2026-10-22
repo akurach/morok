@@ -126,6 +126,21 @@
   .step p { color: var(--dim); font-size: 15px; }
   .step code { color: var(--accent2); font-size: 13px; }
 
+  /* ---- галерея скриншотов ---- */
+  .shots { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  .shots figure { margin: 0; }
+  .shots .wide { grid-column: 1 / -1; }
+  .shots img {
+    width: 100%; display: block; border-radius: 14px;
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    transition: .25s;
+  }
+  .shots figure:hover img { border-color: var(--accent); transform: translateY(-3px); }
+  .shots figcaption { margin-top: 10px; color: var(--dim); font-size: 14px; font-style: italic; }
+  .shots-note { margin-top: 20px; color: var(--dim); font-size: 13px; opacity: .7; }
+  @media (max-width: 720px) { .shots { grid-template-columns: 1fr; } }
+
   footer {
     position: relative; z-index: 1;
     border-top: 1px solid var(--line); padding: 40px 0 60px;
@@ -149,6 +164,7 @@
     <div class="brand"><span class="rune">ᛗ</span> МОРОКЪ</div>
     <nav>
       <a href="#features">Возможности</a>
+      <a href="#screenshots">Интерфейс</a>
       <a href="#install">Установка</a>
       <a href="#compat">Совместимость</a>
       <a href="https://github.com/akurach/morok">GitHub</a>
@@ -200,6 +216,44 @@
         <p>Метрики, графики скорости, журнал решений: что происходит с трафиком и почему выбрана именно эта нода. Ничего не ломается молча.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <h2>Интерфейс</h2>
+    <p class="lead">Тёмная тема, живые метрики, никакой магии — всё видно и управляется мышкой.</p>
+    <div class="shots">
+      <figure class="wide">
+        <img src="../screenshots/dashboard.png" alt="Дашборд Морока" loading="lazy">
+        <figcaption>Дашборд: статус туннеля, фоллбэк-цепочка, график трафика, топ правил и нод.</figcaption>
+      </figure>
+      <figure>
+        <img src="../screenshots/nodes.png" alt="Пул нод" loading="lazy">
+        <figcaption>Пул нод: подписки, ручные ноды, задержки TCP/URL, AmneziaWG.</figcaption>
+      </figure>
+      <figure>
+        <img src="../screenshots/routing.png" alt="Маршрутизация" loading="lazy">
+        <figcaption>Маршрутизация: правила с действиями, быстрые пресеты, источники списков.</figcaption>
+      </figure>
+      <figure>
+        <img src="../screenshots/optimization.png" alt="Оптимизация доставки" loading="lazy">
+        <figcaption>Оптимизация доставки: профили nfqws2 и диагностика — что реально доезжает.</figcaption>
+      </figure>
+      <figure>
+        <img src="../screenshots/market.png" alt="Маркет пресетов" loading="lazy">
+        <figcaption>Маркет пресетов: кураторские наборы правил в один клик.</figcaption>
+      </figure>
+      <figure>
+        <img src="../screenshots/devices.png" alt="Устройства" loading="lazy">
+        <figcaption>Устройства: per-device маршруты — телевизор в туннель, ноут напрямую.</figcaption>
+      </figure>
+      <figure>
+        <img src="../screenshots/components.png" alt="Компоненты" loading="lazy">
+        <figcaption>Компоненты: версии вендорных бинарей и обновления из нашего канала.</figcaption>
+      </figure>
+    </div>
+    <p class="shots-note">На скриншотах — вымышленные демонстрационные данные оффлайн-стенда, не реальные серверы.</p>
   </div>
 </section>
 

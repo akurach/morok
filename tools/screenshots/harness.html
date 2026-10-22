@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Morok screenshot harness</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0d13; }
+  *, *::before, *::after { box-sizing: border-box; }
+  a { color: #7c9aff; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    color: #e8ebf2;
+  }
+  #maincontent { min-height: 100vh; background: #0a0d13; }
+  #maincontent > .container { max-width: none; }
+  #morok-shot-error {
+    color: #ff6b7a; font: 14px/1.5 ui-monospace, Menlo, monospace;
+    white-space: pre-wrap; padding: 24px;
+  }
+</style>
+</head>
+<body>
+<div id="maincontent"><div class="container" id="view"></div></div>
+<script>
+/* скриншоты — для русскоязычного README: форсируем ru-формат дат
+   (headless Chrome игнорирует --lang при toLocaleString без аргументов) */
+(function() {
+	var orig = Date.prototype.toLocaleString;
+	Date.prototype.toLocaleString = function(loc, opts) {
+		return orig.call(this, loc || 'ru-RU', opts);
+	};
+})();
+</script>
+<script src="shim.js"></script>
+<script src="mock-data.js"></script>
+<script>
+(async function() {
+  try {
+    var viewName = new URLSearchParams(location.search).get('view') || 'dashboard';
+    await MorokShim.loadCommon('/luci-app-morok/htdocs/luci-static/resources/morok/common.js');
+    var inst = await MorokShim.loadView(
+      '/luci-app-morok/htdocs/luci-static/resources/view/morok/' + viewName + '.js');
+    var data = inst.load ? await inst.load() : null;
+    var el = inst.render(data);
+    document.getElementById('view').appendChild(el);
+    /* даём асинхронным then() внутри render (nodes/components/antidpi)
+       и загрузке CSS дойти до конца */
+    await new Promise(function(r) { setTimeout(r, 300); });
+    document.title = 'morok-shot:' + viewName + ':ready';
+  } catch (e) {
+    var err = document.createElement('pre');
+    err.id = 'morok-shot-error';
+    err.textContent = 'RENDER FAILED: ' + (e && e.stack || e);
+    document.body.appendChild(err);
+    document.title = 'morok-shot:failed';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

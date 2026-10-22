@@ -75,11 +75,14 @@ curl -fsSL https://cdn.jsdelivr.net/gh/akurach/morok@main/build/install.sh | sh
 
 ## Скриншоты
 
-| Дашборд | Пул нод | Маршрутизация | Устройства |
-|---|---|---|---|
-| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/nodes.png) | ![](docs/screenshots/routing.png) | ![](docs/screenshots/devices.png) |
+![Дашборд: статус туннеля, фоллбэк-цепочка, график метрик](docs/screenshots/dashboard.png)
 
-*(скриншоты появятся с первым публичным релизом — см. [docs/screenshots](docs/screenshots/README.md))*
+| Пул нод | Маршрутизация | Оптимизация |
+|---|---|---|
+| ![Пул нод](docs/screenshots/nodes.png) | ![Маршрутизация](docs/screenshots/routing.png) | ![Оптимизация доставки](docs/screenshots/optimization.png) |
+
+*(на скриншотах — демонстрационные данные оффлайн-стенда, не реальные серверы;
+как переснять: [docs/screenshots](docs/screenshots/README.md))*
 
 ## Как это работает
 
