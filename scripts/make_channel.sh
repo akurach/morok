@@ -101,6 +101,7 @@ cat > "$CHAN/app.json" <<EOF
   "released_at": "$DATE",
   "release_page": "https://github.com/$REPO/releases/tag/$TAG",
   "min_openwrt": "23.05",
+  "notes": "Релиз $PKG_VERSION. Пакеты и компоненты — на странице релиза, манифесты канала доступны через CDN.",
   $app_pkg_ipk$app_pkg_apk
 }
 EOF
