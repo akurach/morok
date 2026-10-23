@@ -1,0 +1,12 @@
+{
+  "component": "amneziawg-go",
+  "version": "0.0.20250522",
+  "channel": "stable",
+  "updated_at": "2026-10-22",
+  "arch": {
+    "aarch64_cortex-a53": {
+      "url": "https://github.com/akurach/morok/releases/download/v0.2.0/amneziawg-go-0.0.20250522_aarch64_cortex-a53",
+      "sha256": "c6e3a88f3c642d8072f7fc7e9205a6c679cdcfc55494fd9991fcc6c3b94e436d"
+    }
+  }
+}

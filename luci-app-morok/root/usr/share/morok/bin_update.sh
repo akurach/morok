@@ -52,7 +52,8 @@ if [ -z "$ARCH" ] && [ -f /etc/openwrt_release ]; then
 fi
 
 # секция component по option name или по имени секции (ucode — cfgXXXX,
-# `uci show` на GL-прошивке для анонимных секций не парсим)
+# `uci show` на GL-прошивке для анонимных секций не парсим).
+# Секции может не быть (бинарь приехал в пакете) — тогда канал по умолчанию.
 sid=$(ucode -e "
 	import { cursor } from 'uci';
 	let c = cursor(); c.load('$CONF');
@@ -60,12 +61,14 @@ sid=$(ucode -e "
 		if ((s.name || s['.name']) == '$name') print(s['.name']);
 	});
 ")
-[ -n "$sid" ] || fail "компонент не найден: $name"
 
-channel=$(uci -q get $CONF.$sid.channel_url)
-[ -n "$channel" ] || fail "канал обновлений не настроен для $name (component.$sid.channel_url пуст)"
-
-path=$(uci -q get $CONF.$sid.path); path=${path:-$BIN_DIR/$name}
+if [ -n "$sid" ]; then
+	channel=$(uci -q get $CONF.$sid.channel_url)
+	path=$(uci -q get $CONF.$sid.path)
+fi
+# канал по умолчанию — jsdelivr-зеркало channel/bin/<name>.json нашего репо
+channel=${channel:-https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/bin/$name.json}
+path=${path:-$BIN_DIR/$name}
 case "$path" in
 	$BIN_DIR/*) ;;
 	*) fail "недопустимый path: $path (только $BIN_DIR/)" ;;

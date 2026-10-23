@@ -145,7 +145,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 }
 .fn-nav a:hover { background: var(--fn-panel2); color: var(--fn-text); text-decoration: none; }
 .fn-nav a.on {
-	background: linear-gradient(135deg, rgba(124,154,255,.16), rgba(167,139,250,.12));
+	background: linear-gradient(135deg, color-mix(in srgb, var(--fn-accent) 16%, transparent), color-mix(in srgb, var(--fn-accent) 12%, transparent));
 	color: var(--fn-accent);
 }
 .fn-nav-ico { width: 18px; text-align: center; flex-shrink: 0; }
@@ -179,7 +179,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 .fn-hero:before {
 	content: ""; position: absolute; top: -70px; right: -70px;
 	width: 260px; height: 260px;
-	background: radial-gradient(circle, rgba(124,154,255,.14), transparent 65%);
+	background: radial-gradient(circle, color-mix(in srgb, var(--fn-accent) 14%, transparent), transparent 65%);
 	pointer-events: none;
 }
 .fn-hero-status { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 700; color: var(--fn-green); text-transform: uppercase; letter-spacing: 1px; }
@@ -206,7 +206,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 .fn-pill.dim { background: var(--fn-panel3); color: var(--fn-muted2); }
 .fn-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 3px 8px; border-radius: 6px; background: var(--fn-panel3); color: var(--fn-muted); border: 1px solid var(--fn-border2); }
 .fn-badge.hl { background: var(--fn-blue-bg); color: var(--fn-blue); border-color: transparent; }
-.fn-badge.violet { background: rgba(167,139,250,.13); color: var(--fn-accent2); border-color: transparent; }
+.fn-badge.violet { background: color-mix(in srgb, var(--fn-accent) 13%, transparent); color: var(--fn-accent2); border-color: transparent; }
 .fn-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .fn-dot.g { background: var(--fn-green); box-shadow: 0 0 6px var(--fn-green); }
 .fn-dot.y { background: var(--fn-yellow); }
@@ -216,7 +216,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 /* buttons */
 .fn-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--fn-panel3); border: 1px solid var(--fn-border2); color: var(--fn-text); font-size: 12.5px; font-weight: 600; padding: 8px 15px; border-radius: 10px; cursor: pointer; transition: all .15s; }
 .fn-btn:hover { border-color: var(--fn-accent); color: var(--fn-accent); }
-.fn-btn.primary { background: linear-gradient(135deg, #7c9aff, #a78bfa); border: none; color: #0a0d13; }
+.fn-btn.primary { background: linear-gradient(135deg, var(--fn-accent), var(--fn-accent2)); border: none; color: #0a0d13; }
 .fn-btn.primary:hover { filter: brightness(1.1); color: #0a0d13; }
 .fn-btn.sm { padding: 6px 11px; font-size: 11.5px; border-radius: 8px; }
 .fn-btn:disabled { opacity: .5; cursor: default; }
@@ -260,7 +260,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 .fn-act.proxy { background: var(--fn-blue-bg); color: var(--fn-blue); }
 .fn-act.direct { background: var(--fn-green-bg); color: var(--fn-green); }
 .fn-act.block { background: var(--fn-red-bg); color: var(--fn-red); }
-.fn-act.antidpi { background: rgba(167,139,250,.13); color: var(--fn-accent2); }
+.fn-act.antidpi { background: color-mix(in srgb, var(--fn-accent) 13%, transparent); color: var(--fn-accent2); }
 .fn-act.adaptive-proxy { background: var(--fn-yellow-bg); color: var(--fn-yellow); }
 
 .fn-section { display: flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .9px; color: var(--fn-muted2); margin: 22px 4px 10px; }
@@ -274,7 +274,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 .fn-chain-arrow { color: var(--fn-muted2); padding: 0 8px; flex-shrink: 0; }
 .fn-chain-big { display: flex; align-items: stretch; margin: 18px 0; }
 .fn-chain-card { flex: 1; background: var(--fn-panel2); border: 1px solid var(--fn-border2); border-radius: 16px; padding: 16px; min-width: 0; }
-.fn-chain-card.primary { border-color: rgba(124,154,255,.45); background: linear-gradient(150deg, rgba(124,154,255,.08), var(--fn-panel2) 55%); }
+.fn-chain-card.primary { border-color: color-mix(in srgb, var(--fn-accent) 45%, transparent); background: linear-gradient(150deg, color-mix(in srgb, var(--fn-accent) 8%, transparent), var(--fn-panel2) 55%); }
 .fn-chain-card .role { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--fn-muted2); }
 .fn-chain-card.primary .role { color: var(--fn-accent); }
 .fn-chain-card .cname { font-size: 14.5px; font-weight: 700; margin-top: 7px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -309,7 +309,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 
 /* status flash */
 .fn-flash { animation: fnflash .5s ease; }
-@keyframes fnflash { 0% { background: rgba(124,154,255,.15); } 100% { background: transparent; } }
+@keyframes fnflash { 0% { background: color-mix(in srgb, var(--fn-accent) 15%, transparent); } 100% { background: transparent; } }
 
 /* ---------- Wave 1: устройства, редактор цепочки, журнал ---------- */
 
@@ -382,7 +382,7 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 	border-radius: 12px; padding: 13px 15px; cursor: pointer; transition: all .15s;
 }
 .fn-choice:hover { border-color: var(--fn-accent); }
-.fn-choice.sel { border-color: var(--fn-accent); background: linear-gradient(150deg, rgba(124,154,255,.1), var(--fn-panel2) 60%); }
+.fn-choice.sel { border-color: var(--fn-accent); background: linear-gradient(150deg, color-mix(in srgb, var(--fn-accent) 10%, transparent), var(--fn-panel2) 60%); }
 .fn-choice .cname { font-size: 13.5px; font-weight: 700; }
 .fn-choice .cdesc { font-size: 11.5px; color: var(--fn-muted2); margin-top: 3px; line-height: 1.45; }
 

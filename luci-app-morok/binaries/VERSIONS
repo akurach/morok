@@ -10,7 +10,7 @@ nfqws2 | 1.0.5.2 (zapret2) | https://github.com/bol-van/zapret2/releases/downloa
 
 xray | 26.9.9 (XTLS/Xray-core) | https://github.com/XTLS/Xray-core/releases/download/v26.9.9/Xray-linux-arm64-v8a.zip | 2026-10-21 | c1defe42b6db958a97c5e049a02a00a4baaedaca7b51c1c229f0830e288acef5 | ELF aarch64, statically linked, stripped; go1.27.1 linux/arm64; sha256 zip-архива сверен с .dgst релиза: 3e38d72dfc5eb65c91df0e5583e9b6676c32232041da47de6ae73946b526d66c; бинарь идентичен /usr/bin/xray на боевом роутере. geoip.dat/geosite.dat НЕ вендорим (28 МБ): xray ищет их в /usr/share/xray и /usr/share/v2ray, на боевом роутере они есть от системной установки; упаковка в ipk — открытый вопрос трека D (см. W3_NOTES_C.md)
 
-amneziawg-go | master 2026-10-22 | github.com/amnezia-vpn/amneziawg-go, собран локально Go (-trimpath -ldflags="-s -w") | 2026-10-22 | c6e3a88f3c642d8072f7fc7e9205a6c679cdcfc55494fd9991fcc6c3b94e436d | ELF aarch64 static, userspace-бэкенд AWG для прошивок без совместимого kmod (GL-прошивки с кастомным vermagic); awg.sh выбирает его, когда kmod-amneziawg не загружается
+amneziawg-go | 0.0.20250522 | github.com/amnezia-vpn/amneziawg-go master b5928ef (2026-08-28), собран локально Go (-trimpath -ldflags="-s -w"); --version в мастере отстаёт | 2026-10-22 | c6e3a88f3c642d8072f7fc7e9205a6c679cdcfc55494fd9991fcc6c3b94e436d | ELF aarch64 static, userspace-бэкенд AWG для прошивок без совместимого kmod (GL-прошивки с кастомным vermagic); awg.sh выбирает его, когда kmod-amneziawg не загружается
 
 # Правила:
 # - Обновление бинаря = новая строка-запись здесь + пересборка ipk.

@@ -8,6 +8,91 @@
 var CSS_VER = '13';
 var cssLoaded = false;
 
+/* ---------- синхронизация акцента с темой DarkVibe (ТЗ §10) ----------
+   Направление строго одно: тема DarkVibe — источник правды. Она печатает
+   --accent/--on-accent в <head> сервер-сайд; отсюда мы их читаем и
+   перекрашиваем морок. Отдельной настройки цвета в мороке нет.
+   Темы нет (bootstrap/argon) — переменные не определены, морок живёт
+   на дефолтах из morok.css, в консоли чисто. */
+var accentApplied = false;
+
+/* #rgb / #rrggbb → { h, s, l } (h 0..360, s/l 0..100); null если не hex */
+function hexToHsl(hex) {
+	var m = String(hex || '').trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+	if (!m) return null;
+	var h6 = m[1];
+	if (h6.length === 3)
+		h6 = h6.split('').map(function(ch) { return ch + ch; }).join('');
+	var r = parseInt(h6.slice(0, 2), 16) / 255,
+	    g = parseInt(h6.slice(2, 4), 16) / 255,
+	    b = parseInt(h6.slice(4, 6), 16) / 255;
+	var max = Math.max(r, g, b), min = Math.min(r, g, b);
+	var h = 0, s = 0, l = (max + min) / 2;
+	if (max !== min) {
+		var d = max - min;
+		s = (l > 0.5 ? d / (2 - max - min) : d / (max + min)) * 100;
+		if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+		else if (max === g) h = (b - r) / d + 2;
+		else h = (r - g) / d + 4;
+		h *= 60;
+	}
+	return { h: h, s: s, l: l * 100 };
+}
+
+/* { h, s, l } → #rrggbb; hue крутится по кругу, s/l клампятся в [0,100] */
+function hslToHex(h, s, l) {
+	h = ((h % 360) + 360) % 360;
+	s = Math.min(100, Math.max(0, s)) / 100;
+	l = Math.min(100, Math.max(0, l)) / 100;
+	var c = (1 - Math.abs(2 * l - 1)) * s;
+	var x = c * (1 - Math.abs((h / 60) % 2 - 1));
+	var m = l - c / 2, r = 0, g = 0, b = 0;
+	if (h < 60)       { r = c; g = x; }
+	else if (h < 120) { r = x; g = c; }
+	else if (h < 180) { g = c; b = x; }
+	else if (h < 240) { g = x; b = c; }
+	else if (h < 300) { r = x; b = c; }
+	else              { r = c; b = x; }
+	function to255(v) {
+		var s16 = Math.round((v + m) * 255).toString(16);
+		return s16.length < 2 ? '0' + s16 : s16;
+	}
+	return '#' + to255(r) + to255(g) + to255(b);
+}
+
+/* Перекраска морока в акцент темы. --fn-accent = акцент темы как есть;
+   --fn-accent2 = тот же цвет со сдвигом HSL (+14° hue, s−8, l+6; s клампим
+   в [10,95], l — в [15,90], чтобы пара оставалась цветной и читаемой).
+   Инлайн на document.documentElement перекрывает :root из morok.css —
+   в т.ч. для модалок LuCI, они живут на уровне body, а инлайн <html>
+   их покрывает (см. комментарий у :root в morok.css). */
+function applyAccent() {
+	if (accentApplied) return;
+	var cs = getComputedStyle(document.documentElement);
+	var accent = (cs.getPropertyValue('--accent') || '').trim();
+	/* --on-accent читаем как сигнал «тема реально напечатала акцент»,
+	   но воротами не считаем — достаточно валидного hex в --accent */
+	var onAccent = (cs.getPropertyValue('--on-accent') || '').trim();
+	var hsl = hexToHsl(accent);
+	if (!hsl || !onAccent) return;
+	var hsl2 = {
+		h: hsl.h + 14,
+		s: Math.min(95, Math.max(10, hsl.s - 8)),
+		l: Math.min(90, Math.max(15, hsl.l + 6))
+	};
+	document.documentElement.style.setProperty('--fn-accent', accent);
+	document.documentElement.style.setProperty('--fn-accent2', hslToHex(hsl2.h, hsl2.s, hsl2.l));
+	accentApplied = true;
+}
+
+/* переменные темы печатаются сервером синхронно в <head> — к рендеру
+   view-морока они уже на месте; подстраховываемся и на DOMContentLoaded.
+   До loadCSS() вызов безвреден: setProperty не зависит от morok.css. */
+if (document.readyState === 'loading')
+	document.addEventListener('DOMContentLoaded', applyAccent);
+else
+	applyAccent();
+
 function loadCSS() {
 	if (cssLoaded) return;
 	cssLoaded = true;
@@ -21,6 +106,9 @@ function loadCSS() {
 	document.querySelectorAll('.cbi-tabmenu, .cbi-tab-descr, #tabmenu, .tabs').forEach(function(el) {
 		el.style.display = 'none';
 	});
+	// фича #10: перекрасить морок в акцент темы DarkVibe (если тема есть);
+	// accentApplied-флаг делает повторные вызовы из DOMContentLoaded дешёвыми
+	applyAccent();
 }
 
 /* Своя навигация вместо стоковых вкладок LuCI:
@@ -584,6 +672,7 @@ function drawArea(canvas, data, opts) {
 
 return baseclass.extend({
 	loadCSS: loadCSS,
+	applyAccent: applyAccent,
 	call: call,
 	toggle: toggle,
 	pingPill: pingPill,

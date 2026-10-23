@@ -232,6 +232,8 @@ function reload_async() {
 // ---------- Wave 2: диагностика, бэкап, компоненты ----------
 
 const BIN_DIR = '/usr/lib/morok/bin';
+// канал обновлений компонентов по умолчанию (jsdelivr-зеркало channel/bin/<name>.json)
+const BIN_CHANNEL = 'https://cdn.jsdelivr.net/gh/akurach/morok@main/channel/bin';
 const LIST_DIR = '/var/etc/morok/lists';
 const SRS_DIR = '/usr/share/morok/rulesets';
 const SB_JSON = '/var/etc/morok/sing-box.json';
@@ -1905,13 +1907,18 @@ let methods = {
 			return { ok: false, error: 'недопустимое имя компонента' };
 		let c = uc();
 		let sec = find_component(c, name);
-		if (!sec)
-			return { ok: false, error: 'компонент не найден: ' + name };
-		if (!sec.channel_url || sec.channel_url == '')
-			return { ok: false, error: 'канал не настроен' };
-		let body = fetch_text(sec.channel_url);
+		// секции может не быть (бинарь из пакета) — работаем по KNOWN_BINS с каналом по умолчанию
+		if (!sec) {
+			let known = 0;
+			for (let n in KNOWN_BINS) if (n == name) known = 1;
+			if (!known)
+				return { ok: false, error: 'компонент не найден: ' + name };
+			sec = {};
+		}
+		let channel = (sec.channel_url && sec.channel_url != '') ? sec.channel_url : BIN_CHANNEL + '/' + name + '.json';
+		let body = fetch_text(channel);
 		if (body == null)
-			return { ok: false, error: 'манифест канала недоступен: ' + sec.channel_url };
+			return { ok: false, error: 'манифест канала недоступен: ' + channel };
 		let m = safe_json(body);
 		if (!m || type(m) != 'object' || !m.version)
 			return { ok: false, error: 'манифест не в нашем формате (нет version)' };
