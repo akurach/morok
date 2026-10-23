@@ -152,18 +152,18 @@ return view.extend({
 		var a = this.scanAgg(found);
 		if (a.total === 0) return null;
 		if (a.ok === a.total)
-			return { cls: 'g', text: '✓ работает' + (a.ms ? ' · ' + a.ms + ' мс' : '') };
+			return { cls: 'g', text: fn._t('✓ работает') + (a.ms ? ' · ' + a.ms + fn._t(' мс') : '') };
 		if (a.ok > 0)
-			return { cls: 'y', text: '~ работает не для всех проверок' };
-		return { cls: 'r', text: '✗ не подходит' };
+			return { cls: 'y', text: fn._t('~ работает не для всех проверок') };
+		return { cls: 'r', text: fn._t('✗ не подходит') };
 	},
 
 	scanDomainPill: function(dr) {
 		if (!dr) return E('span', { 'class': 'fn-pill dim' }, '—');
 		if (dr.code && dr.code !== '000')
 			return E('span', { 'class': 'fn-pill g' },
-				'✓ ' + dr.code + (dr.ms ? ' · ' + dr.ms + ' мс' : ''));
-		return E('span', { 'class': 'fn-pill r' }, '✗' + (dr.ms ? ' · ' + dr.ms + ' мс' : ''));
+				'✓ ' + dr.code + (dr.ms ? ' · ' + dr.ms + fn._t(' мс') : ''));
+		return E('span', { 'class': 'fn-pill r' }, '✗' + (dr.ms ? ' · ' + dr.ms + fn._t(' мс') : ''));
 	},
 
 	buildScanCard: function() {
@@ -181,19 +181,19 @@ return view.extend({
 			value: domains.join(', ')
 		});
 
-		var startBtn = E('button', { 'class': 'fn-btn primary' }, '🔍 Запустить диагностику');
+		var startBtn = E('button', { 'class': 'fn-btn primary' }, fn._t('🔍 Запустить диагностику'));
 		startBtn.disabled = running || self.scanApplying !== '';
 		startBtn.addEventListener('click', function() {
 			var doms = String(domInput.value || '').split(',').map(function(s) {
 				return s.trim().toLowerCase();
 			}).filter(function(s) { return s !== ''; });
 			startBtn.disabled = true;
-			startBtn.textContent = 'Запускаю…';
+			startBtn.textContent = fn._t('Запускаю…');
 			fn.call.scanStart(doms.length ? doms : null).then(function(res) {
 				if (!res || res.ok === false) {
-					fn.notify('✗ ' + ((res && res.error) || 'scan_start недоступен'));
+					fn.notify('✗ ' + ((res && res.error) || fn._t('scan_start недоступен')));
 					startBtn.disabled = false;
-					startBtn.textContent = '🔍 Запустить диагностику';
+					startBtn.textContent = fn._t('🔍 Запустить диагностику');
 					return;
 				}
 				self.scan = { running: true, done: 0, total: res.total || 0,
@@ -203,21 +203,21 @@ return view.extend({
 				self.refreshProfiles();
 				self.pollScan();
 			})['catch'](function() {
-				fn.notify('метод scan_start недоступен');
+				fn.notify(fn._t('метод scan_start недоступен'));
 				startBtn.disabled = false;
-				startBtn.textContent = '🔍 Запустить диагностику';
+				startBtn.textContent = fn._t('🔍 Запустить диагностику');
 			});
 		});
 
-		var stopBtn = E('button', { 'class': 'fn-btn sm' }, '⏹ Остановить');
+		var stopBtn = E('button', { 'class': 'fn-btn sm' }, fn._t('⏹ Остановить'));
 		stopBtn.addEventListener('click', function() {
 			stopBtn.disabled = true;
-			stopBtn.textContent = 'Останавливаю…';
+			stopBtn.textContent = fn._t('Останавливаю…');
 			fn.call.scanStop().then(function(res) {
 				if (res && res.ok === false)
-					fn.notify('✗ ' + (res.error || 'не остановлено'));
+					fn.notify('✗ ' + (res.error || fn._t('не остановлено')));
 				else
-					fn.notify('Диагностика остановлена, прежний профиль восстановлен');
+					fn.notify(fn._t('Диагностика остановлена, прежний профиль восстановлен'));
 				fn.call.scanStatus().then(function(st2) {
 					if (st2) { self.scan = st2; self.renderScanBody(); self.refreshProfiles(); }
 					if (self.scanTimer) { clearInterval(self.scanTimer); self.scanTimer = null; }
@@ -225,17 +225,18 @@ return view.extend({
 						if (nd) { self.data = nd; self.refreshStatus(); }
 					});
 				});
-			})['catch'](function() { fn.notify('метод scan_stop недоступен'); });
+			})['catch'](function() { fn.notify(fn._t('метод scan_stop недоступен')); });
 		});
 
 		var progressText = '';
 		if (running) {
 			var cur = st.current_label || st.current || '';
-			progressText = '⏳ профиль ' + Math.min((st.done || 0) + 1, total || 1) + '/' + total +
-				(cur ? ': ' + cur + '…' : '…');
+			progressText = fn._t('⏳ профиль %s/%s%s',
+				Math.min((st.done || 0) + 1, total || 1), total,
+				cur ? ': ' + cur + '…' : '…');
 		} else if ((st.done || 0) > 0) {
-			progressText = (st.stopped === true ? '⏹ остановлено: ' : '✓ готово: ') +
-				st.done + '/' + total + ' профилей проверено' +
+			progressText = fn._t(st.stopped === true ? '⏹ остановлено: %s' : '✓ готово: %s',
+				fn._t('%s/%s профилей проверено', st.done, total)) +
 				(st.started ? ' · ' + fn.agoText(st.started) : '');
 		}
 
@@ -255,27 +256,28 @@ return view.extend({
 					E('span', { style: 'font-size:17px;line-height:1' }, '★'),
 					E('div', { style: 'flex:1;min-width:0' }, [
 						E('div', { 'class': 'fn-verdict-title' },
-							'Рекомендуем: ' + (best.r.label || best.r.id) +
-							(best.ms ? ' · ' + best.ms + ' мс' : '')),
+							fn._t('Рекомендуем: %s', (best.r.label || best.r.id) +
+								(best.ms ? ' · ' + best.ms + fn._t(' мс') : ''))),
 						E('div', { 'class': 'fn-verdict-note' }, refOf
-							? 'Это тот же профиль, что в карточке выше — просто выберите её и нажмите «Применить».'
-							: 'Профиль из расширенной батареи — применится как «Своя стратегия».')
+							? fn._t('Это тот же профиль, что в карточке выше — просто выберите её и нажмите «Применить».')
+							: fn._t('Профиль из расширенной батареи — применится как «Своя стратегия».'))
 					])
 				];
 				if (!refOf) {
-					var recoBtn = E('button', { 'class': 'fn-btn sm primary' }, 'Применить');
+					var recoBtn = E('button', { 'class': 'fn-btn sm primary' }, fn._t('Применить'));
 					recoBtn.disabled = self.scanApplying !== '';
 					recoBtn.addEventListener('click', function() {
 						self.scanApplying = best.r.id;
 						recoBtn.disabled = true;
-						recoBtn.textContent = 'Применяю…';
+						recoBtn.textContent = fn._t('Применяю…');
 						fn.call.scanApply(best.r.id).then(function(res) {
 							self.scanApplying = '';
 							if (!res || res.ok === false)
-								fn.notify('✗ ' + ((res && res.error) || 'scan_apply недоступен'));
+								fn.notify('✗ ' + ((res && res.error) || fn._t('scan_apply недоступен')));
 							else
-								fn.notify('✓ Профиль «' + (res.label || best.r.label || best.r.id) + '» применён' +
-									(res.running ? '' : ' — но движок не поднялся, см. журнал'));
+								fn.notify(fn._t('✓ Профиль «%s» применён%s',
+									res.label || best.r.label || best.r.id,
+									res.running ? '' : fn._t(' — но движок не поднялся, см. журнал')));
 							fn.call.getAntidpi().then(function(nd) {
 								if (nd) {
 									self.data = nd;
@@ -286,7 +288,7 @@ return view.extend({
 							});
 						})['catch'](function() {
 							self.scanApplying = '';
-							fn.notify('метод scan_apply недоступен');
+							fn.notify(fn._t('метод scan_apply недоступен'));
 						});
 					});
 					recoKids.push(recoBtn);
@@ -296,9 +298,9 @@ return view.extend({
 				recoBox.appendChild(E('div', { 'class': 'fn-verdict bad', style: 'margin-top:11px' }, [
 					E('span', { style: 'font-size:17px;line-height:1' }, '🛡'),
 					E('div', [
-						E('div', { 'class': 'fn-verdict-title' }, 'Ни один профиль не доставил все проверки'),
+						E('div', { 'class': 'fn-verdict-title' }, fn._t('Ни один профиль не доставил все проверки')),
 						E('div', { 'class': 'fn-verdict-note' },
-							'Оптимизация в этой сети может не помочь — надёжнее перевести правила в режим «через VPN» на странице «Маршрутизация».')
+							fn._t('Оптимизация в этой сети может не помочь — надёжнее перевести правила в режим «через VPN» на странице «Маршрутизация».'))
 					])
 				]));
 			}
@@ -308,7 +310,7 @@ return view.extend({
 		   не разворачивает вложенные массивы, дети только плоские) ---- */
 		var table = null;
 		if (results.length) {
-			var headCells = [ E('div', { style: 'flex:1.4;min-width:0;font-weight:700;color:var(--fn-muted2)' }, 'Профиль') ];
+			var headCells = [ E('div', { style: 'flex:1.4;min-width:0;font-weight:700;color:var(--fn-muted2)' }, fn._t('Профиль')) ];
 			domains.forEach(function(d) {
 				headCells.push(E('div', { style: 'flex:1;min-width:0;font-weight:700;color:var(--fn-muted2)' }, d));
 			});
@@ -327,7 +329,7 @@ return view.extend({
 				var cells = [ E('div', { style: 'flex:1.4;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
 					title: r.id }, [
 					r.label || r.id,
-					r.id === bestId ? E('span', { 'class': 'fn-badge hl', style: 'margin-left:7px' }, '★ лучший') : ''
+					r.id === bestId ? E('span', { 'class': 'fn-badge hl', style: 'margin-left:7px' }, fn._t('★ лучший')) : ''
 				]) ];
 				domains.forEach(function(d) {
 					var dr = r.domain_results ? r.domain_results[d] : null;
@@ -335,19 +337,20 @@ return view.extend({
 				});
 				var btnCell = E('div', { style: 'width:96px;text-align:right' }, '');
 				if (okAny) {
-					var applyBtn = E('button', { 'class': 'fn-btn sm' }, 'Применить');
+					var applyBtn = E('button', { 'class': 'fn-btn sm' }, fn._t('Применить'));
 					applyBtn.disabled = running || self.scanApplying !== '';
 					applyBtn.addEventListener('click', function() {
 						self.scanApplying = r.id;
 						applyBtn.disabled = true;
-						applyBtn.textContent = 'Применяю…';
+						applyBtn.textContent = fn._t('Применяю…');
 						fn.call.scanApply(r.id).then(function(res) {
 							self.scanApplying = '';
 							if (!res || res.ok === false) {
-								fn.notify('✗ ' + ((res && res.error) || 'scan_apply недоступен'));
+								fn.notify('✗ ' + ((res && res.error) || fn._t('scan_apply недоступен')));
 							} else {
-								fn.notify('✓ Профиль «' + (res.label || r.label || r.id) + '» применён' +
-									(res.running ? '' : ' — но движок не поднялся, см. журнал'));
+								fn.notify(fn._t('✓ Профиль «%s» применён%s',
+									res.label || r.label || r.id,
+									res.running ? '' : fn._t(' — но движок не поднялся, см. журнал')));
 							}
 							self.renderScanBody();
 							fn.call.getAntidpi().then(function(nd) {
@@ -360,7 +363,7 @@ return view.extend({
 							});
 						})['catch'](function() {
 							self.scanApplying = '';
-							fn.notify('метод scan_apply недоступен');
+							fn.notify(fn._t('метод scan_apply недоступен'));
 							self.renderScanBody();
 						});
 					});
@@ -379,7 +382,7 @@ return view.extend({
 				tableWrap = E('div', { 'class': 'fn-scan-table' }, table);
 			} else {
 				var det = E('details', { 'class': 'fn-hostlist', style: 'margin-top:11px' }, [
-					E('summary', {}, 'Все результаты (' + results.length + ' профилей)'),
+					E('summary', {}, fn._t('Все результаты (%s профилей)', results.length)),
 					E('div', { 'class': 'fn-scan-table' }, table)
 				]);
 				tableWrap = det;
@@ -390,13 +393,12 @@ return view.extend({
 		if (running) ctrlKids.push(stopBtn);
 
 		var bodyKids = [
-			E('div', { 'class': 'fn-card-title' }, 'Диагностика доставки'),
+			E('div', { 'class': 'fn-card-title' }, fn._t('Диагностика доставки')),
 			E('div', { 'class': 'fn-card-sub' },
-				'Не знаете, какой профиль выбрать? Роутер сам проверит всю батарею (' + (total || '—') +
-				' профилей) на ваших сервисах и подскажет лучший. По окончании вернётся прежний профиль.'),
+				fn._t('Не знаете, какой профиль выбрать? Роутер сам проверит всю батарею (%s профилей) на ваших сервисах и подскажет лучший. По окончании вернётся прежний профиль.', total || '—')),
 			E('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap' }, ctrlKids),
 			E('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:9px;flex-wrap:wrap' }, [
-				E('span', { 'class': 'fn-card-sub', style: 'margin-top:0;white-space:nowrap' }, 'Что проверяем:'),
+				E('span', { 'class': 'fn-card-sub', style: 'margin-top:0;white-space:nowrap' }, fn._t('Что проверяем:')),
 				domInput
 			])
 		];
@@ -406,9 +408,9 @@ return view.extend({
 		if (tableWrap) bodyKids.push(tableWrap);
 		else if (running)
 			bodyKids.push(E('div', { 'class': 'fn-card-sub', style: 'margin-top:9px' },
-				'первые результаты появятся через несколько секунд…'));
+				fn._t('первые результаты появятся через несколько секунд…')));
 		bodyKids.push(E('div', { 'class': 'fn-card-sub', style: 'margin-top:10px;opacity:.75' },
-			'⚠ во время проверки движок оптимизации кратковременно перезапускается; трафик правил в режиме «через VPN» не затрагивается.'));
+			fn._t('⚠ во время проверки движок оптимизации кратковременно перезапускается; трафик правил в режиме «через VPN» не затрагивается.')));
 
 		return E('div', { 'class': 'fn-card fn-mt' }, bodyKids);
 	},
@@ -419,51 +421,52 @@ return view.extend({
 		var engineName = d.engine === 'zapret2' ? 'nfqws2 (zapret2)' : d.engine;
 		var engPill;
 		if (d.engine === 'none')
-			engPill = E('span', { 'class': 'fn-pill dim' }, 'выключен');
+			engPill = E('span', { 'class': 'fn-pill dim' }, fn._t('выключен'));
 		else if (d.running)
-			engPill = E('span', { 'class': 'fn-pill g' }, 'работает');
+			engPill = E('span', { 'class': 'fn-pill g' }, fn._t('работает'));
 		else
-			engPill = E('span', { 'class': 'fn-pill r' }, 'остановлен');
+			engPill = E('span', { 'class': 'fn-pill r' }, fn._t('остановлен'));
 
 		var g = d.guardian || { mode: 'off', state_text: '' };
 		var gCls = g.mode === 'proxy' ? 'y' : g.mode === 'mixed' ? 'y' : g.mode === 'off' ? 'dim' : 'g';
-		var gText = { off: 'сторож: правил нет', proxy: 'сторож: увёл в VPN', mixed: 'сторож: часть правил в VPN', antidpi: 'сторож: оптимизация активна' }[g.mode] || g.mode;
+		var gText = { off: fn._t('сторож: правил нет'), proxy: fn._t('сторож: увёл в VPN'),
+			mixed: fn._t('сторож: часть правил в VPN'), antidpi: fn._t('сторож: оптимизация активна') }[g.mode] || g.mode;
 
 		return E('div', { 'class': 'fn-card' }, [
 			E('div', { 'class': 'fn-spread' }, [
 				E('div', [
-					E('div', { 'class': 'fn-card-title' }, 'Статус движка'),
-					E('div', { 'class': 'fn-card-sub' }, 'оптимизация доставки пакетов на лету, без VPN')
+					E('div', { 'class': 'fn-card-title' }, fn._t('Статус движка')),
+					E('div', { 'class': 'fn-card-sub' }, fn._t('оптимизация доставки пакетов на лету, без VPN'))
 				]),
 				engPill
 			]),
 			E('div', { style: 'margin-top:12px' }, [
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Движок'),
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Движок')),
 						E('div', { 'class': 'fn-opt-desc' }, engineName)
 					]),
 					E('span', { 'class': 'fn-dot ' + (d.running ? 'g' : d.engine === 'none' ? 'dim' : 'r') })
 				]),
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Активный профиль'),
-						E('div', { 'class': 'fn-opt-desc' }, 'как сейчас обрабатываются пакеты')
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Активный профиль')),
+						E('div', { 'class': 'fn-opt-desc' }, fn._t('как сейчас обрабатываются пакеты'))
 					]),
 					E('span', { 'class': 'fn-badge violet' }, this.strategyLabel(d.strategy))
 				]),
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Адаптивный сторож'),
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Адаптивный сторож')),
 						E('div', { 'class': 'fn-opt-desc' }, g.state_text || '—')
 					]),
 					E('span', { 'class': 'fn-pill ' + gCls }, gText)
 				]),
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Доменов в хостлисте'),
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Доменов в хостлисте')),
 						E('div', { 'class': 'fn-opt-desc' },
-							(d.rules_count || 0) + ' вкл. правил «Оптимизация» + сиды профиля')
+							fn._t('%s вкл. правил «Оптимизация» + сиды профиля', d.rules_count || 0))
 					]),
 					E('span', { 'class': 'fn-pill b' }, String((d.hostlist || []).length))
 				])
@@ -495,13 +498,13 @@ return view.extend({
 	/* клиентская валидация custom-строки (серверная — dry-run в set_antidpi) */
 	customCheck: function(s) {
 		var t = String(s || '').trim();
-		if (t === '') return { err: 'строка пустая — вставьте аргументы nfqws2' };
-		if (/[\r\n]/.test(s)) return { err: 'стратегия должна быть одной строкой' };
-		if (s.length > 2000) return { err: 'слишком длинно: максимум 2000 символов' };
+		if (t === '') return { err: fn._t('строка пустая — вставьте аргументы nfqws2') };
+		if (/[\r\n]/.test(s)) return { err: fn._t('стратегия должна быть одной строкой') };
+		if (s.length > 2000) return { err: fn._t('слишком длинно: максимум 2000 символов') };
 		if (!/--filter-(tcp|udp)=/.test(t))
-			return { err: 'нет ни одного фильтра — нужен хотя бы один --filter-tcp= или --filter-udp=' };
+			return { err: fn._t('нет ни одного фильтра — нужен хотя бы один --filter-tcp= или --filter-udp=') };
 		if (!/--lua-desync=/.test(t))
-			return { warn: 'нет приёмов обработки (--lua-desync=…) — пакеты пойдут без изменений' };
+			return { warn: fn._t('нет приёмов обработки (--lua-desync=…) — пакеты пойдут без изменений') };
 		return null;
 	},
 
@@ -520,7 +523,7 @@ return view.extend({
 			preview.textContent = '';
 			var t = String(ta.value || '').trim();
 			if (t === '') {
-				hint.textContent = 'Пример: --filter-tcp=443 --lua-desync=multisplit:pos=1,midsld --new --filter-udp=443 --lua-desync=drop';
+				hint.textContent = fn._t('Пример: --filter-tcp=443 --lua-desync=multisplit:pos=1,midsld --new --filter-udp=443 --lua-desync=drop');
 				return;
 			}
 			var chk = self.customCheck(ta.value);
@@ -533,7 +536,7 @@ return view.extend({
 				hint.style.color = 'var(--fn-yellow)';
 				hint.textContent = '⚠ ' + chk.warn;
 			} else {
-				hint.textContent = '✓ выглядит корректно — перед применением движок ещё прогонит самопроверку (dry-run)';
+				hint.textContent = fn._t('✓ выглядит корректно — перед применением движок ещё прогонит самопроверку (dry-run)');
 			}
 			var pv = self.parseCustomPreview(ta.value);
 			pv.filters.forEach(function(f) {
@@ -570,18 +573,18 @@ return view.extend({
 
 			var nameKids = [
 				st.label,
-				isActive ? E('span', { 'class': 'fn-badge hl' }, 'активна') : ''
+				isActive ? E('span', { 'class': 'fn-badge hl' }, fn._t('активна')) : ''
 			];
 			if (bestRef === st.id)
-				nameKids.push(E('span', { 'class': 'fn-badge reco' }, '★ рекомендовано'));
+				nameKids.push(E('span', { 'class': 'fn-badge reco' }, fn._t('★ рекомендовано')));
 
 			var bodyKids = [
-				E('div', { 'class': 'fn-prof-simple' }, info.simple),
-				info.when ? E('div', { 'class': 'fn-prof-when' }, '💡 ' + info.when) : ''
+				E('div', { 'class': 'fn-prof-simple' }, fn._t(info.simple)),
+				info.when ? E('div', { 'class': 'fn-prof-when' }, '💡 ' + fn._t(info.when)) : ''
 			];
 			if (verdict)
 				bodyKids.push(E('div', { style: 'margin-top:9px' },
-					E('span', { 'class': 'fn-pill ' + verdict.cls, title: 'По итогам последней диагностики' },
+					E('span', { 'class': 'fn-pill ' + verdict.cls, title: fn._t('По итогам последней диагностики') },
 						verdict.text)));
 			if (st.id === 'custom')
 				bodyKids.push(self.buildCustomEditor());
@@ -606,7 +609,7 @@ return view.extend({
 			grid.appendChild(card);
 		});
 
-		var applyBtn = E('button', { 'class': 'fn-btn primary' }, 'Применить профиль');
+		var applyBtn = E('button', { 'class': 'fn-btn primary' }, fn._t('Применить профиль'));
 		var applyNote = E('div', { 'class': 'fn-card-sub', style: 'margin-top:9px' });
 		applyBtn.addEventListener('click', function() {
 			if (self.sel === 'custom') {
@@ -618,36 +621,35 @@ return view.extend({
 				}
 			}
 			applyBtn.disabled = true;
-			applyBtn.textContent = 'Проверяю и применяю…';
+			applyBtn.textContent = fn._t('Проверяю и применяю…');
 			applyNote.textContent = '';
 			fn.call.setAntidpi(self.sel, '', self.sel === 'custom' ? self.custom : null)
 				.then(function(res) {
 					applyBtn.disabled = false;
-					applyBtn.textContent = 'Применить профиль';
+					applyBtn.textContent = fn._t('Применить профиль');
 					if (!res || res.ok === false) {
-						applyNote.textContent = '✗ ' + ((res && res.error) || 'не удалось применить');
+						applyNote.textContent = '✗ ' + ((res && res.error) || fn._t('не удалось применить'));
 						applyNote.style.color = 'var(--fn-red)';
 						return;
 					}
 					applyNote.style.color = '';
-					applyNote.textContent = '✓ ' + (res.note || 'применено');
+					applyNote.textContent = '✓ ' + (res.note || fn._t('применено'));
 					/* освежаем статус: движок/стратегия/хостлист перечитались */
 					fn.call.getAntidpi().then(function(nd) {
 						if (nd) { self.data = nd; self.refresh(); }
 					});
 				})['catch'](function() {
 					applyBtn.disabled = false;
-					applyBtn.textContent = 'Применить профиль';
-					applyNote.textContent = '✗ метод set_antidpi недоступен';
+					applyBtn.textContent = fn._t('Применить профиль');
+					applyNote.textContent = fn._t('✗ метод set_antidpi недоступен');
 					applyNote.style.color = 'var(--fn-red)';
 				});
 		});
 
 		return E('div', { 'class': 'fn-card fn-mt' }, [
-			E('div', { 'class': 'fn-card-title' }, 'Профиль оптимизации'),
+			E('div', { 'class': 'fn-card-title' }, fn._t('Профиль оптимизации')),
 			E('div', { 'class': 'fn-card-sub' },
-				'Профиль — это способ обработки пакетов. Выберите готовый или запустите диагностику ниже — она сама подскажет, что работает в вашей сети. ' +
-				'Перед применением движок прогоняет самопроверку: битый профиль не роняет работающий — останется прежний.'),
+				fn._t('Профиль — это способ обработки пакетов. Выберите готовый или запустите диагностику ниже — она сама подскажет, что работает в вашей сети. Перед применением движок прогоняет самопроверку: битый профиль не роняет работающий — останется прежний.')),
 			grid,
 			E('div', { style: 'margin-top:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap' }, [
 				applyBtn
@@ -670,16 +672,16 @@ return view.extend({
 		try {
 			uci.set('morok', 'antidpi', field, String(value));
 		} catch (e) {
-			fn.notify('не удалось записать настройку');
+			fn.notify(fn._t('не удалось записать настройку'));
 			return;
 		}
 		uci.save().then(function() {
 			return L.resolveDefault(uciCommit('morok'), null);
 		}).then(function(res) {
 			if (res === null)
-				fn.notify('настройка сохранена локально, но commit недоступен');
+				fn.notify(fn._t('настройка сохранена локально, но commit недоступен'));
 			else
-				fn.notify('Сторож: настройка сохранена — вступит в силу на следующей проверке');
+				fn.notify(fn._t('Сторож: настройка сохранена — вступит в силу на следующей проверке'));
 		});
 	},
 
@@ -716,48 +718,45 @@ return view.extend({
 		/* человеческое объяснение «что будет, если профиль перестанет работать» */
 		var explain;
 		if (g.mode === 'off')
-			explain = 'Сейчас сторожу нечего охранять: нет включённых правил с действием «Оптимизация» и флажком «адаптивное». ' +
-				'Включите такое правило на странице «Маршрутизация» — и сторож начнёт следить.';
+			explain = fn._t('Сейчас сторожу нечего охранять: нет включённых правил с действием «Оптимизация» и флажком «адаптивное». Включите такое правило на странице «Маршрутизация» — и сторож начнёт следить.');
 		else if (g.mode === 'proxy' || g.mode === 'mixed')
-			explain = 'Прямой путь сейчас не отвечает, поэтому сторож ВРЕМЕННО пустил трафик через VPN — всё продолжает работать. ' +
-				'Он периодически проверяет прямой путь и сам вернёт правило на оптимизацию, когда доставка восстановится.';
+			explain = fn._t('Прямой путь сейчас не отвечает, поэтому сторож ВРЕМЕННО пустил трафик через VPN — всё продолжает работать. Он периодически проверяет прямой путь и сам вернёт правило на оптимизацию, когда доставка восстановится.');
 		else
-			explain = 'Если профиль перестанет работать, сторож это заметит и ВРЕМЕННО переведёт трафик правила через VPN — ' +
-				'сервисы продолжат открываться. Когда прямой путь оживёт, сторож сам вернёт правило на оптимизацию.';
+			explain = fn._t('Если профиль перестанет работать, сторож это заметит и ВРЕМЕННО переведёт трафик правила через VPN — сервисы продолжат открываться. Когда прямой путь оживёт, сторож сам вернёт правило на оптимизацию.');
 
 		return E('div', { 'class': 'fn-card fn-mt' }, [
 			E('div', { 'class': 'fn-card-title' }, [
-				'Адаптивный сторож ',
+				fn._t('Адаптивный сторож '),
 				E('span', { 'class': 'fn-badge violet' }, 'guardian')
 			]),
 			E('div', { 'class': 'fn-card-sub' }, explain),
-			E('div', { style: 'margin-top:6px' }, [
+			E('div', { style: 'margin-top:6px' } , [
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Считать профиль сломанным после'),
-						E('div', { 'class': 'fn-opt-desc' }, 'подряд неудачных проверок — потом правило уйдёт в VPN')
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Считать профиль сломанным после')),
+						E('div', { 'class': 'fn-opt-desc' }, fn._t('подряд неудачных проверок — потом правило уйдёт в VPN'))
 					]),
 					this.guardianSeg('fail_threshold', failThr, [ [ 2, '2' ], [ 3, '3' ], [ 5, '5' ] ])
 				]),
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Проверять прямой путь каждые'),
-						E('div', { 'class': 'fn-opt-desc' }, 'как часто сторож делает контрольный запрос')
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Проверять прямой путь каждые')),
+						E('div', { 'class': 'fn-opt-desc' }, fn._t('как часто сторож делает контрольный запрос'))
 					]),
 					this.guardianSeg('check_interval', checkInt,
-						[ [ 60, '1 мин' ], [ 300, '5 мин' ], [ 600, '10 мин' ] ])
+						[ [ 60, fn._t('1 мин') ], [ 300, fn._t('5 мин') ], [ 600, fn._t('10 мин') ] ])
 				]),
 				E('div', { 'class': 'fn-opt' }, [
 					E('div', [
-						E('div', { 'class': 'fn-opt-name' }, 'Пытаться вернуть на оптимизацию каждые'),
-						E('div', { 'class': 'fn-opt-desc' }, 'пока правило в VPN, сторож изредка пробует прямой путь')
+						E('div', { 'class': 'fn-opt-name' }, fn._t('Пытаться вернуть на оптимизацию каждые')),
+						E('div', { 'class': 'fn-opt-desc' }, fn._t('пока правило в VPN, сторож изредка пробует прямой путь'))
 					]),
 					this.guardianSeg('rescan_interval', rescanInt,
-						[ [ 3600, '1 ч' ], [ 21600, '6 ч' ], [ 86400, 'сутки' ] ])
+						[ [ 3600, fn._t('1 ч') ], [ 21600, fn._t('6 ч') ], [ 86400, fn._t('сутки') ] ])
 				])
 			]),
 			E('div', { 'class': 'fn-card-sub', style: 'margin-top:10px;opacity:.75' },
-				'Флажок «адаптивное» включается у каждого правила на странице «Маршрутизация». Настройки сторож подхватывает сам, перезапуск не нужен.')
+				fn._t('Флажок «адаптивное» включается у каждого правила на странице «Маршрутизация». Настройки сторож подхватывает сам, перезапуск не нужен.'))
 		]);
 	},
 
@@ -769,8 +768,7 @@ return view.extend({
 		var rows = E('div', { style: 'margin-top:10px' });
 		if (!used.length) {
 			rows.appendChild(E('div', { 'class': 'fn-card-sub' },
-				'Пока ни одно правило не использует оптимизацию — движок простаивает. ' +
-				'Добавьте правило с действием «Оптимизация» в Маршрутизации или установите пресет из Маркета.'));
+				fn._t('Пока ни одно правило не использует оптимизацию — движок простаивает. Добавьте правило с действием «Оптимизация» в Маршрутизации или установите пресет из Маркета.')));
 		} else {
 			used.forEach(function(r) {
 				var adaptive = null;
@@ -780,8 +778,8 @@ return view.extend({
 					E('div', { style: 'flex:1;min-width:0' }, [
 						E('div', { 'class': 'fn-rowname' }, [
 							r.label || r.id,
-							adaptive === '1' ? E('span', { 'class': 'fn-badge violet' }, 'адаптивное') : '',
-							r.enabled ? '' : E('span', { 'class': 'fn-pill dim' }, 'выключено')
+							adaptive === '1' ? E('span', { 'class': 'fn-badge violet' }, fn._t('адаптивное')) : '',
+							r.enabled ? '' : E('span', { 'class': 'fn-pill dim' }, fn._t('выключено'))
 						])
 					]),
 					fn.actBadge('antidpi', adaptive === '1')
@@ -791,12 +789,12 @@ return view.extend({
 		return E('div', { 'class': 'fn-card fn-mt' }, [
 			E('div', { 'class': 'fn-spread' }, [
 				E('div', [
-					E('div', { 'class': 'fn-card-title' }, 'Какие правила используют оптимизацию'),
+					E('div', { 'class': 'fn-card-title' }, fn._t('Какие правила используют оптимизацию')),
 					E('div', { 'class': 'fn-card-sub' },
-						'Оптимизация применяется только к трафику этих правил — остальное идёт как настроено в маршрутизации.')
+						fn._t('Оптимизация применяется только к трафику этих правил — остальное идёт как настроено в маршрутизации.'))
 				]),
 				E('a', { 'class': 'fn-btn sm', href: L.url('admin/services/morok/routing') },
-					'🧭 Открыть Маршрутизацию')
+					fn._t('🧭 Открыть Маршрутизацию'))
 			]),
 			rows
 		]);
@@ -810,30 +808,30 @@ return view.extend({
 			style: 'min-width:220px;flex:1'
 		});
 		var resultBox = E('div');
-		var btn = E('button', { 'class': 'fn-btn' }, '🔬 Проверить');
+		var btn = E('button', { 'class': 'fn-btn' }, fn._t('🔬 Проверить'));
 		btn.addEventListener('click', function() {
 			var dom = String(input.value || '').trim().toLowerCase();
-			if (!dom) { fn.notify('Введите домен'); return; }
+			if (!dom) { fn.notify(fn._t('Введите домен')); return; }
 			btn.disabled = true;
-			btn.textContent = 'Проверяю…';
+			btn.textContent = fn._t('Проверяю…');
 			resultBox.textContent = '';
 			fn.call.testAntidpi(dom).then(function(res) {
 				btn.disabled = false;
-				btn.textContent = '🔬 Проверить';
+				btn.textContent = fn._t('🔬 Проверить');
 				if (!res) {
-					fn.notify('метод test_antidpi недоступен');
+					fn.notify(fn._t('метод test_antidpi недоступен'));
 					return;
 				}
 				var ok = res.ok !== false && res.code && res.code !== '000';
 				var cls = ok ? 'ok' : 'bad';
 				var title = ok
-					? '✓ Доставка есть! Оптимизация работает'
-					: '✗ Доставки нет — попробуйте другой профиль';
-				if (res.ok === false && !res.code) title = '✗ Проверка не удалась';
+					? fn._t('✓ Доставка есть! Оптимизация работает')
+					: fn._t('✗ Доставки нет — попробуйте другой профиль');
+				if (res.ok === false && !res.code) title = fn._t('✗ Проверка не удалась');
 				var metaParts = [];
 				if (res.ip) metaParts.push('IP ' + res.ip);
 				if (res.code) metaParts.push('HTTP ' + res.code);
-				if (res.time_ms != null && res.code && res.code !== '000') metaParts.push(res.time_ms + ' мс');
+				if (res.time_ms != null && res.code && res.code !== '000') metaParts.push(res.time_ms + fn._t(' мс'));
 				resultBox.appendChild(E('div', { 'class': 'fn-verdict ' + cls }, [
 					E('div', { style: 'font-size:17px;line-height:1' }, ok ? '⚡' : '🛡'),
 					E('div', [
@@ -844,8 +842,8 @@ return view.extend({
 				]));
 			})['catch'](function() {
 				btn.disabled = false;
-				btn.textContent = '🔬 Проверить';
-				fn.notify('метод test_antidpi недоступен');
+				btn.textContent = fn._t('🔬 Проверить');
+				fn.notify(fn._t('метод test_antidpi недоступен'));
 			});
 		});
 		input.addEventListener('keydown', function(ev) {
@@ -853,9 +851,9 @@ return view.extend({
 		});
 
 		return E('div', { 'class': 'fn-card fn-mt' }, [
-			E('div', { 'class': 'fn-card-title' }, 'Проверка доставки'),
+			E('div', { 'class': 'fn-card-title' }, fn._t('Проверка доставки')),
 			E('div', { 'class': 'fn-card-sub' },
-				'Быстрая проверка одного домена: резолв через туннель (системный DNS может быть недостоверен), затем запрос НАПРЯМУЮ — через движок, если он жив.'),
+				fn._t('Быстрая проверка одного домена: резолв через туннель (системный DNS может быть недостоверен), затем запрос НАПРЯМУЮ — через движок, если он жив.')),
 			E('div', { style: 'display:flex;gap:10px;margin-top:12px;flex-wrap:wrap' }, [
 				input, btn
 			]),
@@ -871,18 +869,17 @@ return view.extend({
 			tags.appendChild(E('span', { 'class': 'fn-badge' }, d));
 		});
 		if (!hl.length)
-			tags.appendChild(E('div', { 'class': 'fn-card-sub' }, 'пусто — движок работает без hostlist-фильтра или не запущен'));
+			tags.appendChild(E('div', { 'class': 'fn-card-sub' }, fn._t('пусто — движок работает без hostlist-фильтра или не запущен')));
 
 		var det = E('details', { 'class': 'fn-hostlist', style: 'margin-top:12px' }, [
-			E('summary', {}, 'Домены в хостлисте (' + hl.length + ')'),
+			E('summary', {}, fn._t('Домены в хостлисте (%s)', hl.length)),
 			tags
 		]);
 
 		return E('div', { 'class': 'fn-card fn-mt' }, [
-			E('div', { 'class': 'fn-card-title' }, 'Хостлист оптимизации'),
+			E('div', { 'class': 'fn-card-title' }, fn._t('Хостлист оптимизации')),
 			E('div', { 'class': 'fn-card-sub' },
-				'Собирается автоматически из включённых правил с действием «Оптимизация» плюс сиды профиля. ' +
-				'Только чтение — меняется через правила, а не руками.'),
+				fn._t('Собирается автоматически из включённых правил с действием «Оптимизация» плюс сиды профиля. Только чтение — меняется через правила, а не руками.')),
 			det
 		]);
 	},
@@ -912,7 +909,7 @@ return view.extend({
 		this.rules = (data[1] && Array.isArray(data[1].rules)) ? data[1].rules : [];
 		if (!this.data) {
 			return fn.page('antidpi', E('div', [
-				fn.unavailCard('Оптимизация (get_antidpi)')
+				fn.unavailCard(fn._t('Оптимизация (get_antidpi)'))
 			]));
 		}
 		this.sel = this.data.strategy || 'youtube';

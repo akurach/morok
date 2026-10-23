@@ -207,7 +207,7 @@ return view.extend({
 			seq = seq.then(function() {
 				return fnRun(st).then(null, function(err) {
 					rep.failed.push(text);
-					st.done(false, String(err || 'ошибка'));
+					st.done(false, String(err || fn._t('ошибка')));
 				});
 			});
 		}
@@ -216,20 +216,20 @@ return view.extend({
 		(p.sources || []).forEach(function(src) {
 			var exist = self.findSource(src.label, src.url);
 			if (exist) {
-				step('Список «' + (src.label || exist.label) + '»', function(st) {
+				step(fn._t('Список «%s»', src.label || exist.label), function(st) {
 					rep.srcReused++;
-					if (exist.enabled) { st.skip('уже подключён'); return Promise.resolve(); }
+					if (exist.enabled) { st.skip(fn._t('уже подключён')); return Promise.resolve(); }
 					/* выключенный источник включаем — иначе правила по нему мёртвые */
 					return fn.call.setSource(exist.id, true, exist.url || '', exist.update_interval || 0).then(function(res) {
-						if (res && res.ok === false) throw res.error || 'не включился';
-						st.done(true, 'был выключен — включили');
+						if (res && res.ok === false) throw res.error || fn._t('не включился');
+						st.done(true, fn._t('был выключен — включили'));
 					});
 				});
 				return;
 			}
-			step('Список «' + (src.label || src.url) + '» — добавление', function(st) {
+			step(fn._t('Список «%s» — добавление', src.label || src.url), function(st) {
 				var sid = uci.add('morok', 'source');
-				if (!sid) throw 'uci.add не удался';
+				if (!sid) throw fn._t('uci.add не удался');
 				uci.set('morok', sid, 'label', src.label || src.url);
 				uci.set('morok', sid, 'url', src.url);
 				uci.set('morok', sid, 'enabled', '1');
@@ -237,7 +237,7 @@ return view.extend({
 				uciDirty = true;
 				newSrcDefs.push(src);
 				rep.srcAdded++;
-				st.done(true, 'скачается после применения');
+				st.done(true, fn._t('скачается после применения'));
 				return Promise.resolve();
 			});
 		});
@@ -245,16 +245,16 @@ return view.extend({
 		/* 2. правила */
 		(p.rules || []).forEach(function(rule) {
 			if (self.ruleExists(rule)) {
-				step('Правило «' + rule.label + '»', function(st) {
+				step(fn._t('Правило «%s»', rule.label), function(st) {
 					rep.rulesSkipped++;
-					st.skip('уже есть — не дублируем');
+					st.skip(fn._t('уже есть — не дублируем'));
 					return Promise.resolve();
 				});
 				return;
 			}
 			if (rule.source) {
 				/* source_list — через контрактный add_rule (match = id источника) */
-				step('Правило «' + rule.label + '»', function(st) {
+				step(fn._t('Правило «%s»', rule.label), function(st) {
 					var srcDef = null;
 					(p.sources || []).forEach(function(s) {
 						if (!srcDef && (self.normL(s.label) === self.normL(rule.source) || s.url === rule.source)) srcDef = s;
@@ -265,7 +265,7 @@ return view.extend({
 							   дописываем правило тоже через uci, со ссылкой по label */
 							if (srcDef && newSrcDefs.indexOf(srcDef) !== -1) {
 								var sid2 = uci.add('morok', 'rule');
-								if (!sid2) throw 'uci.add не удался';
+								if (!sid2) throw fn._t('uci.add не удался');
 								uci.set('morok', sid2, 'label', rule.label);
 								uci.set('morok', sid2, 'match_type', 'source_list');
 								uci.set('morok', sid2, 'source', rule.source);
@@ -276,10 +276,10 @@ return view.extend({
 								st.done(true);
 								return;
 							}
-							throw 'источник «' + rule.source + '» не найден';
+							throw fn._t('источник «%s» не найден', rule.source);
 						}
 						return fn.call.addRule(rule.label, id, rule.action || 'proxy').then(function(res) {
-							if (res && res.ok === false) throw res.error || 'не добавилось';
+							if (res && res.ok === false) throw res.error || fn._t('не добавилось');
 							rep.rulesAdded++;
 							st.done(true);
 						});
@@ -289,12 +289,12 @@ return view.extend({
 			}
 			/* geosite/custom — прямая UCI-секция: сохраняем match_type,
 			   весь массив match и adaptive (add_rule этого не умеет) */
-			step('Правило «' + rule.label + '»', function(st) {
+			step(fn._t('Правило «%s»', rule.label), function(st) {
 				var mt = rule.match_type || 'custom';
 				var match = Array.isArray(rule.match) ? rule.match : [];
-				if (!match.length) { st.skip('пустой match — нечего добавлять'); return Promise.resolve(); }
+				if (!match.length) { st.skip(fn._t('пустой match — нечего добавлять')); return Promise.resolve(); }
 				var sid = uci.add('morok', 'rule');
-				if (!sid) throw 'uci.add не удался';
+				if (!sid) throw fn._t('uci.add не удался');
 				uci.set('morok', sid, 'label', rule.label);
 				uci.set('morok', sid, 'match_type', mt);
 				uci.set('morok', sid, 'match', match);
@@ -303,26 +303,26 @@ return view.extend({
 				uci.set('morok', sid, 'enabled', '1');
 				uciDirty = true;
 				rep.rulesAdded++;
-				st.done(true, mt + (rule.action === 'antidpi' ? ' · ⚡ оптимизация' : '') +
-					(rule.adaptive ? ' · адаптивное' : ''));
+				st.done(true, mt + (rule.action === 'antidpi' ? fn._t(' · ⚡ оптимизация') : '') +
+					(rule.adaptive ? fn._t(' · адаптивное') : ''));
 				return Promise.resolve();
 			});
 		});
 
 		/* 3. коммит staged-изменений uci (источники + geosite/custom правила) */
-		step('Сохраняю конфиг', function(st) {
-			if (!uciDirty) { st.skip('нечего коммитить'); return Promise.resolve(); }
+		step(fn._t('Сохраняю конфиг'), function(st) {
+			if (!uciDirty) { st.skip(fn._t('нечего коммитить')); return Promise.resolve(); }
 			return uci.save().then(function() {
 				return L.resolveDefault(uciCommit('morok'), null);
 			}).then(function(res) {
-				if (res === null) throw 'ubus uci commit недоступен';
+				if (res === null) throw fn._t('ubus uci commit недоступен');
 				st.done(true);
 			});
 		});
 
 		/* 4. докачать свежие списки, чтобы правила не стартовали пустыми */
-		step('Запускаю скачивание новых списков', function(st) {
-			if (!newSrcDefs.length) { st.skip('новых списков нет'); return Promise.resolve(); }
+		step(fn._t('Запускаю скачивание новых списков'), function(st) {
+			if (!newSrcDefs.length) { st.skip(fn._t('новых списков нет')); return Promise.resolve(); }
 			var q = Promise.resolve();
 			newSrcDefs.forEach(function(src) {
 				q = q.then(function() {
@@ -331,24 +331,24 @@ return view.extend({
 					});
 				});
 			});
-			return q.then(function() { st.done(true, 'в фоне'); });
+			return q.then(function() { st.done(true, fn._t('в фоне')); });
 		});
 
 		/* 5. профиль оптимизации из пресета — best-effort */
 		if (p.antidpi_strategy) {
-			step('Профиль оптимизации: ' + p.antidpi_strategy, function(st) {
+			step(fn._t('Профиль оптимизации: %s', p.antidpi_strategy), function(st) {
 				return L.resolveDefault(fn.call.setAntidpi(p.antidpi_strategy), null).then(function(res) {
-					if (res === null) { st.skip('set_antidpi недоступен — пропускаем'); return; }
-					if (res && res.ok === false) { st.done(false, res.error || 'не применилась'); return; }
+					if (res === null) { st.skip(fn._t('set_antidpi недоступен — пропускаем')); return; }
+					if (res && res.ok === false) { st.done(false, res.error || fn._t('не применилась')); return; }
 					st.done(true);
 				});
 			});
 		}
 
 		/* 6. применить конфиг */
-		step('Применяю конфиг (apply)', function(st) {
+		step(fn._t('Применяю конфиг (apply)'), function(st) {
 			return fn.call.apply().then(function(res) {
-				if (res && res.ok === false) throw res.error || 'apply не удался';
+				if (res && res.ok === false) throw res.error || fn._t('apply не удался');
 				st.done(true);
 			});
 		});
@@ -356,19 +356,21 @@ return view.extend({
 		seq.then(function() {
 			doneBtn.disabled = false;
 			var parts = [];
-			if (rep.rulesAdded) parts.push('правил: ' + rep.rulesAdded);
-			if (rep.srcAdded) parts.push('списков: ' + rep.srcAdded);
+			if (rep.rulesAdded) parts.push(fn._t('правил: %s', rep.rulesAdded));
+			if (rep.srcAdded) parts.push(fn._t('списков: %s', rep.srcAdded));
 			if (rep.rulesSkipped || rep.srcReused)
-				parts.push('пропущено как уже имеющиеся: ' + (rep.rulesSkipped + rep.srcReused));
+				parts.push(fn._t('пропущено как уже имеющиеся: %s', rep.rulesSkipped + rep.srcReused));
 			if (rep.failed.length) {
 				ui.addNotification(null, E('p',
-					'«' + p.label + '»: установлено частично' + (parts.length ? ' (' + parts.join(', ') + ')' : '') +
-					'. Не встало: ' + rep.failed.join('; ')), 'warning');
+					fn._t('«%s»: установлено частично%s. Не встало: %s', p.label,
+						parts.length ? ' (' + parts.join(', ') + ')' : '',
+						rep.failed.join('; '))), 'warning');
 			} else {
 				/* запоминаем версию, чтобы потом показать «обновился в канале» */
 				self.rememberVersion(p);
 				ui.addNotification(null, E('p',
-					'Пресет «' + p.label + '» установлен' + (parts.length ? ' — ' + parts.join(', ') : '')));
+					fn._t('Пресет «%s» установлен%s', p.label,
+						parts.length ? ' — ' + parts.join(', ') : '')));
 			}
 		});
 		return seq;
@@ -380,14 +382,14 @@ return view.extend({
 	describeRule: function(rule) {
 		var mt = rule.match_type || 'custom';
 		var match = Array.isArray(rule.match) ? rule.match : [];
-		var what = MATCH_TYPE_HUMAN[mt] || mt;
+		var what = fn._t(MATCH_TYPE_HUMAN[mt] || mt);
 		if (mt === 'custom' && match.length)
-			what = match.length + ' ' +
-				(match.length === 1 ? 'домен' : match.length < 5 ? 'домена' : 'доменов') +
-				' из пресета';
+			what = fn._p(match.length,
+				[ '%s домен', '%s домена', '%s доменов' ],
+				[ '%s domain', '%s domains' ]) + fn._t(' из пресета');
 		if (mt === 'geosite' && match.length)
 			what += ' «' + match.join(', ') + '»';
-		var where = ACTION_HUMAN[rule.action || 'proxy'] || rule.action;
+		var where = fn._t(ACTION_HUMAN[rule.action || 'proxy'] || rule.action);
 		return { what: what, where: where };
 	},
 
@@ -406,7 +408,7 @@ return view.extend({
 				E('span', { 'class': 'fn-ic-ico' }, '🧭'),
 				E('span', { 'class': 'fn-ic-name' }, [
 					r.label,
-					r.adaptive ? E('span', { 'class': 'fn-badge violet', style: 'margin-left:7px' }, 'со сторожем') : ''
+					r.adaptive ? E('span', { 'class': 'fn-badge violet', style: 'margin-left:7px' }, fn._t('со сторожем')) : ''
 				]),
 				fn.actBadge(r.action, r.adaptive)
 			];
@@ -414,10 +416,10 @@ return view.extend({
 			ruleKids.push(row);
 			ruleKids.push(E('div', { 'class': 'fn-pd-match', style: 'padding:0 14px 7px' },
 				d.what + ' → ' + d.where +
-				(r.adaptive ? '; если оптимизация деградирует — правило временно уйдёт в VPN и вернётся само' : '')));
+				(r.adaptive ? fn._t('; если оптимизация деградирует — правило временно уйдёт в VPN и вернётся само') : '')));
 			if (r.match_type === 'custom' && match.length > 3)
 				ruleKids.push(E('div', { 'class': 'fn-pd-match', style: 'padding:0 14px 7px;opacity:.65' },
-					match.slice(0, 6).join(', ') + (match.length > 6 ? ' и ещё ' + (match.length - 6) : '')));
+					match.slice(0, 6).join(', ') + (match.length > 6 ? fn._t(' и ещё %s', match.length - 6) : '')));
 		});
 
 		var blocks = [];
@@ -427,16 +429,16 @@ return view.extend({
 		/* мета: версия, категория */
 		var metaKids = [];
 		if (p.version)
-			metaKids.push(E('span', { 'class': 'fn-pill dim' }, 'версия ' + p.version));
+			metaKids.push(E('span', { 'class': 'fn-pill dim' }, fn._t('версия %s', p.version)));
 		var cat = CATEGORY_INFO[this.presetCategory(p)];
-		if (cat) metaKids.push(E('span', { 'class': 'fn-pill dim' }, cat.title));
+		if (cat) metaKids.push(E('span', { 'class': 'fn-pill dim' }, fn._t(cat.title)));
 		if (st.installed)
-			metaKids.push(E('span', { 'class': 'fn-pill g' }, '✓ установлен'));
+			metaKids.push(E('span', { 'class': 'fn-pill g' }, fn._t('✓ установлен')));
 		if (metaKids.length)
 			blocks.push(E('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:9px' }, metaKids));
 
 		blocks.push(E('div', { 'class': 'fn-pd-block' }, [
-			E('div', { 'class': 'fn-pd-title' }, 'Что внутри — правила (' + rules.length + ')'),
+			E('div', { 'class': 'fn-pd-title' }, fn._t('Что внутри — правила (%s)', rules.length)),
 			E('div', { 'class': 'fn-icompose' }, ruleKids)
 		]));
 
@@ -448,20 +450,20 @@ return view.extend({
 					E('span', { 'class': 'fn-ic-name' }, s.label || s.url)
 				]));
 				srcKids.push(E('div', { 'class': 'fn-pd-match', style: 'padding:0 14px 7px;opacity:.65' },
-					s.url + ' · обновление каждые ' + Math.round((s.update_interval || 86400) / 3600) + ' ч'));
+					s.url + ' · ' + fn._t('обновление каждые %s ч', Math.round((s.update_interval || 86400) / 3600))));
 			});
 			blocks.push(E('div', { 'class': 'fn-pd-block' }, [
-				E('div', { 'class': 'fn-pd-title' }, 'Источники списков (' + srcs.length + ')'),
+				E('div', { 'class': 'fn-pd-title' }, fn._t('Источники списков (%s)', srcs.length)),
 				E('div', { 'class': 'fn-icompose' }, srcKids)
 			]));
 		}
 
 		if (p.antidpi_strategy)
 			blocks.push(E('div', { 'class': 'fn-pd-block' }, [
-				E('div', { 'class': 'fn-pd-title' }, 'Профиль оптимизации'),
+				E('div', { 'class': 'fn-pd-title' }, fn._t('Профиль оптимизации')),
 				E('div', { 'class': 'fn-card-sub' }, [
-					'Пресет переключит профиль оптимизации на «' + p.antidpi_strategy + '». Тонкая настройка — на странице ',
-					E('a', { href: L.url('admin/services/morok/antidpi'), click: function() { ui.hideModal(); } }, 'Оптимизация'),
+					fn._t('Пресет переключит профиль оптимизации на «%s». Тонкая настройка — на странице ', p.antidpi_strategy),
+					E('a', { href: L.url('admin/services/morok/antidpi'), click: function() { ui.hideModal(); } }, fn._t('Оптимизация')),
 					'.'
 				])
 			]));
@@ -472,8 +474,8 @@ return view.extend({
 			var exist = self.findSource(s.label, s.url);
 			list.appendChild(E('div', { 'class': 'fn-icrow' }, [
 				E('span', { 'class': 'fn-ic-ico' }, '📋'),
-				E('span', { 'class': 'fn-ic-name' }, 'Список: ' + (s.label || s.url)),
-				E('span', { 'class': 'fn-pill ' + (exist ? 'dim' : 'b') }, exist ? 'уже подключён' : 'новый')
+				E('span', { 'class': 'fn-ic-name' }, fn._t('Список: %s', s.label || s.url)),
+				E('span', { 'class': 'fn-pill ' + (exist ? 'dim' : 'b') }, exist ? fn._t('уже подключён') : fn._t('новый'))
 			]));
 		});
 		rules.forEach(function(r) {
@@ -482,20 +484,20 @@ return view.extend({
 				E('span', { 'class': 'fn-ic-ico' }, '🧭'),
 				E('span', { 'class': 'fn-ic-name' }, r.label),
 				fn.actBadge(r.action, r.adaptive),
-				E('span', { 'class': 'fn-pill ' + (exist ? 'dim' : 'b') }, exist ? 'уже есть' : 'новое')
+				E('span', { 'class': 'fn-pill ' + (exist ? 'dim' : 'b') }, exist ? fn._t('уже есть') : fn._t('новое'))
 			];
 			list.appendChild(E('div', { 'class': 'fn-icrow' }, kids));
 		});
 
 		blocks.push(E('div', { 'class': 'fn-pd-block' }, [
-			E('div', { 'class': 'fn-pd-title' }, st.installed ? 'Что будет при повторной установке' : 'Что будет установлено'),
+			E('div', { 'class': 'fn-pd-title' }, st.installed ? fn._t('Что будет при повторной установке') : fn._t('Что будет установлено')),
 			list,
 			E('div', { 'class': 'fn-card-sub', style: 'margin-top:8px;opacity:.7' },
-				'Что уже есть в конфиге — пропустим, дублей не будет. После добавления конфиг применится автоматически (apply).')
+				fn._t('Что уже есть в конфиге — пропустим, дублей не будет. После добавления конфиг применится автоматически (apply).'))
 		]));
 
 		var goBtn = E('button', { 'class': 'fn-btn primary' },
-			st.updated ? '🔄 Обновить' : st.installed ? '🔄 Установить заново' : '🛒 Установить');
+			st.updated ? fn._t('🔄 Обновить') : st.installed ? fn._t('🔄 Установить заново') : fn._t('🛒 Установить'));
 		var logBox = E('div', { 'class': 'fn-ilog', style: 'display:none' });
 		goBtn.addEventListener('click', function() {
 			goBtn.disabled = true;
@@ -507,11 +509,11 @@ return view.extend({
 
 		blocks.push(logBox);
 		blocks.push(E('div', { style: 'display:flex;gap:10px;justify-content:flex-end;margin-top:16px' }, [
-			E('button', { 'class': 'fn-btn', click: ui.hideModal }, 'Закрыть'),
+			E('button', { 'class': 'fn-btn', click: ui.hideModal }, fn._t('Закрыть')),
 			goBtn
 		]));
 
-		ui.showModal((p.emoji || '🛒') + ' ' + (p.label || 'Пресет'), blocks);
+		ui.showModal((p.emoji || '🛒') + ' ' + (p.label || fn._t('Пресет')), blocks);
 	},
 
 	/* ---------- карточки ---------- */
@@ -535,30 +537,34 @@ return view.extend({
 		var nameKids = [ p.label || p.id || '?' ];
 		if (st.updated)
 			nameKids.push(E('span', { 'class': 'fn-badge reco' },
-				'обновился: v' + st.installedVer + ' → v' + p.version));
+				fn._t('обновился: v%s → v%s', st.installedVer, p.version)));
 		else if (st.installed)
-			nameKids.push(E('span', { 'class': 'fn-pill g' }, '✓ установлен'));
+			nameKids.push(E('span', { 'class': 'fn-pill g' }, fn._t('✓ установлен')));
 		else if (st.partial)
-			nameKids.push(E('span', { 'class': 'fn-pill y' }, 'частично'));
+			nameKids.push(E('span', { 'class': 'fn-pill y' }, fn._t('частично')));
 
 		var metaKids = [
-			E('span', { 'class': 'fn-pill dim' }, rules.length + ' ' + (rules.length === 1 ? 'правило' : rules.length < 5 ? 'правила' : 'правил'))
+			E('span', { 'class': 'fn-pill dim' }, fn._p(rules.length,
+				[ '%s правило', '%s правила', '%s правил' ],
+				[ '%s rule', '%s rules' ]))
 		];
 		if (srcs.length)
-			metaKids.push(E('span', { 'class': 'fn-pill dim' }, srcs.length + ' ' + (srcs.length === 1 ? 'список' : srcs.length < 5 ? 'списка' : 'списков')));
+			metaKids.push(E('span', { 'class': 'fn-pill dim' }, fn._p(srcs.length,
+				[ '%s список', '%s списка', '%s списков' ],
+				[ '%s list', '%s lists' ])));
 		if (p.version)
 			metaKids.push(E('span', { 'class': 'fn-pill dim' }, 'v' + p.version));
 		acts.forEach(function(a) { metaKids.push(a); });
 
-		var detailBtn = E('button', { 'class': 'fn-btn sm' }, 'Подробнее');
+		var detailBtn = E('button', { 'class': 'fn-btn sm' }, fn._t('Подробнее'));
 		detailBtn.addEventListener('click', function() { self.showDetail(p); });
 
 		var actBtn;
 		if (st.installed && !st.updated) {
-			actBtn = E('button', { 'class': 'fn-btn sm', disabled: 'disabled' }, '✓ Установлен');
+			actBtn = E('button', { 'class': 'fn-btn sm', disabled: 'disabled' }, fn._t('✓ Установлен'));
 		} else {
 			actBtn = E('button', { 'class': 'fn-btn sm primary' },
-				st.updated ? '🔄 Обновить' : st.partial ? 'Доустановить' : '🛒 Установить');
+				st.updated ? fn._t('🔄 Обновить') : st.partial ? fn._t('Доустановить') : fn._t('🛒 Установить'));
 			actBtn.addEventListener('click', function() { self.showDetail(p); });
 		}
 
@@ -579,7 +585,7 @@ return view.extend({
 		var self = this;
 		box.textContent = '';
 		if (marketRes === null) {
-			box.appendChild(fn.unavailCard('Маркет пресетов'));
+			box.appendChild(fn.unavailCard(fn._t('Маркет пресетов')));
 			return;
 		}
 		this.presets = Array.isArray(marketRes.presets) ? marketRes.presets : [];
@@ -588,8 +594,8 @@ return view.extend({
 				E('div', { 'class': 'fn-rowitem', style: 'border:none;padding:4px 0' }, [
 					E('span', { 'class': 'fn-dot y' }),
 					E('div', [
-						E('div', { 'class': 'fn-rowname' }, 'Каталог пуст'),
-						E('div', { 'class': 'fn-card-sub' }, 'Backend ответил, но пресетов не прислал — попробуйте обновить позже.')
+						E('div', { 'class': 'fn-rowname' }, fn._t('Каталог пуст')),
+						E('div', { 'class': 'fn-card-sub' }, fn._t('Backend ответил, но пресетов не прислал — попробуйте обновить позже.'))
 					])
 				])
 			]));
@@ -608,9 +614,9 @@ return view.extend({
 			if (!list || !list.length) return;
 			var info = CATEGORY_INFO[catKey];
 			box.appendChild(E('div', { 'class': 'fn-mcat' }, [
-				info.title,
+				fn._t(info.title),
 				E('span', { 'class': 'cnt' }, String(list.length)),
-				info.sub ? E('span', { 'class': 'sub' }, info.sub) : ''
+				info.sub ? E('span', { 'class': 'sub' }, fn._t(info.sub)) : ''
 			]));
 			var grid = E('div', { 'class': 'fn-market-grid' });
 			list.forEach(function(p) { grid.appendChild(self.presetCard(p)); });
@@ -627,9 +633,9 @@ return view.extend({
 		var box = E('div', [ fn.skelRows(3) ]);
 		var root = E('div', [
 			E('div', { 'class': 'fn-card', style: 'margin-bottom:14px' }, [
-				E('div', { 'class': 'fn-card-title' }, '🛒 Маркет пресетов'),
+				E('div', { 'class': 'fn-card-title' }, fn._t('🛒 Маркет пресетов')),
 				E('div', { 'class': 'fn-card-sub' },
-					'Готовые наборы правил по категориям: выберите сервис → «Подробнее» покажет, что именно добавится и куда пойдёт трафик → «Установить» сделает всё за один клик. Уже имеющиеся правила не дублируются.')
+					fn._t('Готовые наборы правил по категориям: выберите сервис → «Подробнее» покажет, что именно добавится и куда пойдёт трафик → «Установить» сделает всё за один клик. Уже имеющиеся правила не дублируются.'))
 			]),
 			box
 		]);
