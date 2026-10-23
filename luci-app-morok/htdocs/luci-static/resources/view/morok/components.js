@@ -16,7 +16,7 @@ return view.extend({
 	humanError: function(err) {
 		var s = String(err || '').toLowerCase();
 		if (s.indexOf('channel') !== -1 || s.indexOf('канал') !== -1 || s.indexOf('not configured') !== -1)
-			return 'канал обновлений не настроен — приедет в Wave 4';
+			return 'канал обновлений недоступен — проверьте соединение';
 		return err || 'ошибка';
 	},
 
