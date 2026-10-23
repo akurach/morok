@@ -134,6 +134,7 @@ var market = { presets: [
     "id": "youtube",
     "label": "YouTube",
     "emoji": "📺",
+    "version": "1.1",
     "description": "Оптимизация доставки до видеохостингов YouTube по geosite-списку (профили фрагментации пакетов, стратегия «YouTube (мягкий)»). Адаптивный контроль: если оптимизация перестанет работать — правило временно уйдёт в VPN и само вернётся.",
     "antidpi_strategy": "youtube",
     "sources": [],
@@ -270,6 +271,7 @@ var market = { presets: [
     "id": "rkn-full",
     "label": "Расширенный список сообщества (re:filter)",
     "emoji": "🛡",
+    "version": "2026.02",
     "description": "Расширенный список сообщества — через VPN: агрегированный список re:filter (~81k доменов). Список скачивается с зеркала jsdelivr и обновляется по расписанию.",
     "sources": [
       {
@@ -293,39 +295,54 @@ var market = { presets: [
 var antidpi = {
 	engine: 'zapret2', running: true,
 	strategy: 'youtube', strategy_custom: '',
+	/* label/desc — как в backend antidpi_strategies() */
 	strategies: [
-		{ id: 'youtube', label: 'YouTube (стандарт)',
-			desc: 'фрагментация ClientHello + multisplit по SLD — проверенный профиль для видеохостингов' },
-		{ id: 'multisplit', label: 'Универсальный multisplit',
-			desc: 'разрез пакетов в нескольких позициях — когда стандартный профиль не помогает' },
-		{ id: 'hostcase', label: 'Hostcase + fake',
-			desc: 'модификация регистра Host и подложный первый пакет — мягкий вариант' },
-		{ id: 'custom', label: 'Свой профиль',
-			desc: 'ручная строка аргументов nfqws2 — для тех, кто знает, что делает' }
+		{ id: 'youtube', label: 'YouTube (мягкий)',
+			desc: 'multisplit ClientHello по списку доменов + сброс QUIC. Минимальное вмешательство — для оптимизации доставки до видеохостингов.' },
+		{ id: 'universal', label: 'Универсальная (агрессивная)',
+			desc: 'Поддельный ClientHello с ttl=8/md5/badsum + multidisorder. Когда доставка фильтруется по DPI-отпечатку и мягкий профиль не справляется.' },
+		{ id: 'custom', label: 'Своя стратегия',
+			desc: 'Сырая строка аргументов nfqws2 (--filter-tcp/--lua-desync) — ручной подбор под своего провайдера.' }
 	],
-	guardian: { mode: 'antidpi', state_text: 'следим за 1 правилом оптимизации' },
+	guardian: { mode: 'antidpi', state_text: 'YouTube — оптимизация' },
 	rules_count: 1,
 	hostlist: [ 'youtube.com', 'googlevideo.com', 'ytimg.com', 'ggpht.com',
 		'youtu.be', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com' ]
 };
 
+/* завершённый прогон сканера (хранится в scan_state.json): эталон ref-youtube —
+   лучший, часть профилей батареи не подошла. id — как в scan_profiles.txt */
 var scanStatus = {
-	running: false, stopped: false, done: 6, total: 6,
+	running: false, stopped: false, done: 36, total: 36,
+	started: now - 17 * 60,
 	domains: [ 'youtube.com', 'googlevideo.com' ],
 	results: [
-		{ id: 'youtube', label: 'YouTube (стандарт)', domain_results: {
-			'youtube.com': { code: '200', ms: 312 }, 'googlevideo.com': { code: '200', ms: 388 } } },
-		{ id: 'multisplit', label: 'Универсальный multisplit', domain_results: {
-			'youtube.com': { code: '200', ms: 401 }, 'googlevideo.com': { code: '200', ms: 455 } } },
-		{ id: 'hostcase', label: 'Hostcase + fake', domain_results: {
-			'youtube.com': { code: '200', ms: 512 }, 'googlevideo.com': { code: '000', ms: 3001 } } },
-		{ id: 'disorder', label: 'Disorder', domain_results: {
+		{ id: 'ref-youtube', label: 'Эталон: YouTube (мягкий)', domain_results: {
+			'youtube.com': { code: '200', ms: 301 }, 'googlevideo.com': { code: '200', ms: 344 } } },
+		{ id: 'ref-universal', label: 'Эталон: Universal', domain_results: {
+			'youtube.com': { code: '200', ms: 402 }, 'googlevideo.com': { code: '000', ms: 3001 } } },
+		{ id: 'ms-1', label: 'multisplit pos=1', domain_results: {
+			'youtube.com': { code: '200', ms: 365 }, 'googlevideo.com': { code: '200', ms: 410 } } },
+		{ id: 'ms-midsld', label: 'multisplit pos=midsld', domain_results: {
+			'youtube.com': { code: '200', ms: 388 }, 'googlevideo.com': { code: '200', ms: 402 } } },
+		{ id: 'md-1', label: 'multidisorder pos=1', domain_results: {
 			'youtube.com': { code: '000', ms: 3002 }, 'googlevideo.com': { code: '000', ms: 3000 } } },
-		{ id: 'fake-tls', label: 'Fake TLS', domain_results: {
-			'youtube.com': { code: '200', ms: 476 }, 'googlevideo.com': { code: '200', ms: 530 } } },
-		{ id: 'syssplit', label: 'Syscall split', domain_results: {
-			'youtube.com': { code: '000', ms: 3001 }, 'googlevideo.com': { code: '000', ms: 3003 } } }
+		{ id: 'fake-ttl8', label: 'fake клон hello, ip_ttl=8', domain_results: {
+			'youtube.com': { code: '200', ms: 421 }, 'googlevideo.com': { code: '200', ms: 455 } } },
+		{ id: 'fake-badsum', label: 'fake клон hello, badsum', domain_results: {
+			'youtube.com': { code: '200', ms: 476 }, 'googlevideo.com': { code: '000', ms: 3003 } } },
+		{ id: 'syndata', label: 'syndata (мусор в SYN)', domain_results: {
+			'youtube.com': { code: '000', ms: 3001 }, 'googlevideo.com': { code: '000', ms: 3004 } } }
 	]
+};
+
+/* UCI-значения для оффлайн-стенда (shim читает их из uci.get):
+   настройки сторожа + флаг adaptive у правила YouTube */
+window.MOROK_MOCK_UCI = {
+	'morok.antidpi.fail_threshold': '3',
+	'morok.antidpi.check_interval': '300',
+	'morok.antidpi.rescan_interval': '21600',
+	'morok.r1.adaptive': '1'
 };
 
 /* ---------- компоненты ---------- */
