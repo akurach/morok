@@ -613,3 +613,76 @@ body.morok-page .modal ::placeholder { color: var(--fn-muted2); }
 .fn-istep-ico.fail { color: var(--fn-red); }
 .fn-istep-ico.skip { color: var(--fn-muted2); }
 .fn-istep-note { color: var(--fn-muted2); font-size: 11px; }
+
+/* ---------- Wave 5: Оптимизация — карточки профилей ---------- */
+
+/* сетка карточек профилей: адаптивная, 1-3 колонки */
+.fn-prof-grid {
+	display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: 12px; margin-top: 13px;
+}
+.fn-prof {
+	background: var(--fn-bg2); border: 1px solid var(--fn-border);
+	border-radius: 14px; padding: 15px 16px; cursor: pointer;
+	transition: border-color .15s, background .15s;
+	min-width: 0;
+}
+.fn-prof:hover { border-color: var(--fn-accent); }
+.fn-prof.on {
+	border-color: var(--fn-accent); background: var(--fn-panel2);
+	box-shadow: 0 0 0 1.5px var(--fn-accent) inset;
+}
+.fn-prof-head { display: flex; align-items: flex-start; gap: 11px; }
+.fn-prof-emoji {
+	width: 36px; height: 36px; flex-shrink: 0;
+	background: var(--fn-panel3); border: 1px solid var(--fn-border2);
+	border-radius: 10px; font-size: 18px;
+	display: flex; align-items: center; justify-content: center;
+}
+.fn-prof-head .fn-radio { margin-top: 9px; }
+.fn-prof-simple { font-size: 12px; color: var(--fn-text); opacity: .88; line-height: 1.5; }
+.fn-prof-when { font-size: 11.5px; color: var(--fn-muted); margin-top: 6px; line-height: 1.45; }
+.fn-prof textarea {
+	width: 100%; min-height: 74px; resize: vertical;
+	background: var(--fn-bg); border: 1px solid var(--fn-border2);
+	border-radius: 10px; color: var(--fn-text);
+	font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+	font-size: 11.5px; line-height: 1.5; padding: 9px 11px;
+}
+.fn-prof textarea:focus { border-color: var(--fn-accent); outline: none; }
+
+/* бейдж «рекомендовано» — тёплый, заметный, но не кричащий */
+.fn-badge.reco {
+	background: var(--fn-yellow-bg); color: var(--fn-yellow);
+	border-color: transparent; text-transform: none; letter-spacing: 0;
+	font-size: 10.5px;
+}
+
+/* таблица результатов диагностики: высота ограничена, скролл внутри */
+.fn-scan-table { max-height: 430px; overflow-y: auto; margin-top: 5px; border-radius: 10px; }
+
+/* ---------- Wave 5: Маркет — категории и детали пресета ---------- */
+
+/* заголовок категории маркета */
+.fn-mcat {
+	display: flex; align-items: center; gap: 9px;
+	font-size: 12px; font-weight: 700; letter-spacing: .3px;
+	color: var(--fn-text); margin: 20px 2px 11px;
+}
+.fn-mcat:first-child { margin-top: 4px; }
+.fn-mcat .cnt {
+	background: var(--fn-panel3); color: var(--fn-muted2);
+	padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;
+}
+.fn-mcat .sub { font-weight: 400; color: var(--fn-muted2); font-size: 11px; }
+
+/* карточка пресета: футер с двумя кнопками */
+.fn-preset-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
+
+/* детальная модалка пресета: блоки «что внутри» */
+.fn-pd-block { margin-top: 12px; }
+.fn-pd-title {
+	font-size: 11px; font-weight: 700; text-transform: uppercase;
+	letter-spacing: .7px; color: var(--fn-muted2); margin-bottom: 7px;
+}
+.fn-pd-match { font-size: 11px; color: var(--fn-muted2); margin-top: 3px; word-break: break-all; }
