@@ -184,8 +184,11 @@ async function __evalModule(url, extraModules) {
 }
 
 window.MorokShim = {
-	/* common.js нужен вьюхам как 'morok.common'; грузим один раз */
-	loadCommon: async function(url) {
+	/* common.js нужен вьюхам как 'morok.common'; грузим один раз.
+	   Перед ним — 'morok.i18n' (common делает 'require morok.i18n') */
+	loadCommon: async function(url, i18nUrl) {
+		if (!MODULES['morok.i18n'] && i18nUrl)
+			MODULES['morok.i18n'] = await __evalModule(i18nUrl);
 		if (!MODULES['morok.common'])
 			MODULES['morok.common'] = await __evalModule(url);
 		return MODULES['morok.common'];

@@ -23,15 +23,19 @@ sleep 1
 curl -sf "http://127.0.0.1:$PORT/tools/screenshots/harness.html" -o /dev/null || {
 	echo "Сервер на :$PORT не отдаёт harness.html" >&2; exit 1; }
 
-shoot() { # view file height
-	echo "  → $2 ($1)"
+shoot() { # view file height [lang]
+	local lang="${4:-ru}"
+	local url="http://127.0.0.1:$PORT/tools/screenshots/harness.html?view=$1"
+	[ "$lang" = "en" ] && url="$url&lang=en"
+	echo "  → $2 ($1, $lang)"
 	"$CHROME" --headless --disable-gpu --hide-scrollbars \
-		--lang=ru-RU --accept-lang=ru-RU \
+		--lang="$([ "$lang" = "en" ] && echo en-US || echo ru-RU)" \
+		--accept-lang="$([ "$lang" = "en" ] && echo en-US || echo ru-RU)" \
 		--force-device-scale-factor=1 \
 		--window-size="1600,$3" \
 		--virtual-time-budget=15000 \
 		--screenshot="$OUT/.raw/$2" \
-		"http://127.0.0.1:$PORT/tools/screenshots/harness.html?view=$1" >/dev/null 2>&1
+		"$url" >/dev/null 2>&1
 }
 
 shoot dashboard  dashboard.png   2500
@@ -41,6 +45,10 @@ shoot devices    devices.png     1200
 shoot market     market.png      1500
 shoot antidpi    optimization.png 2100
 shoot components components.png  1300
+# английская версия интерфейса (?lang=en)
+shoot dashboard  dashboard-en.png   2500 en
+shoot market     market-en.png      1500 en
+shoot antidpi    optimization-en.png 2100 en
 
 kill $SRV 2>/dev/null
 trap - EXIT
