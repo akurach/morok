@@ -1,11 +1,13 @@
 'use strict';
 'require baseclass';
 'require rpc';
+'require morok.i18n as i18n';
 
 /* Общие хелперы Morok: загрузка CSS, ubus-декларации, DOM-строительство,
-   парсер share-ссылок, флаги, навигация. */
+   парсер share-ссылок, флаги, навигация. Все пользовательские строки —
+   через i18n.t (словарь ru/en в morok/i18n.js, ключ = русский исходник). */
 
-var CSS_VER = '14';
+var CSS_VER = '15';
 var cssLoaded = false;
 
 /* ---------- синхронизация акцента с темой DarkVibe (ТЗ §10) ----------
@@ -131,12 +133,32 @@ function nav(activeKey) {
 		return E('a', {
 			href: L.url(it.path),
 			'class': it.key === activeKey ? 'on' : ''
-		}, [ E('span', { 'class': 'fn-nav-ico' }, it.icon), it.label ]);
+		}, [ E('span', { 'class': 'fn-nav-ico' }, it.icon), i18n.t(it.label) ]);
 	});
 	return E('nav', { 'class': 'fn-nav' }, [
 		E('div', { 'class': 'fn-nav-logo' }, [ 'Мо', E('b', 'рок') ]),
-		E('div', { 'class': 'fn-nav-links' }, links)
+		E('div', { 'class': 'fn-nav-links' }, links),
+		langSwitch()
 	]);
+}
+
+/* Переключатель языка интерфейса (RU/EN). Выбор живёт в localStorage,
+   дублируем в UCI (globals.lang, best-effort) как резервную копию. */
+function langSwitch() {
+	var cur = i18n.getLang();
+	function mk(l) {
+		return E('button', {
+			'class': cur === l ? 'on' : '',
+			title: i18n.t('Язык интерфейса'),
+			click: function() {
+				if (i18n.getLang() === l) return;
+				i18n.setLang(l);
+				try { L.resolveDefault(call.setGlobal('lang', l), null); } catch (e) {}
+				location.reload();
+			}
+		}, l.toUpperCase());
+	}
+	return E('div', { 'class': 'fn-lang' }, [ mk('ru'), mk('en') ]);
 }
 
 /* Обёртка страницы: сайдбар слева + контент справа */
@@ -254,7 +276,7 @@ function metricCell(n) {
 	var hasNew = n.tcp_ms != null || n.url_ms != null || n.dns_ok != null;
 	if (!hasNew) return pingPill(n.ping);
 	function ms(v) {
-		if (v == null || v <= 0) return [ 'нет ответа', true ];
+		if (v == null || v <= 0) return [ i18n.t('нет ответа'), true ];
 		return [ v + ' ms', false ];
 	}
 	var tcp = ms(n.tcp_ms), url = ms(n.url_ms);
@@ -267,14 +289,14 @@ function metricCell(n) {
 }
 
 /* «N мин назад» для unix-timestamp (сек) */function agoText(ts) {
-	if (!ts || ts <= 0) return 'никогда';
+	if (!ts || ts <= 0) return i18n.t('никогда');
 	var sec = Math.max(0, Math.floor(Date.now() / 1000) - ts);
-	if (sec < 60) return 'только что';
+	if (sec < 60) return i18n.t('только что');
 	var min = Math.floor(sec / 60);
-	if (min < 60) return min + ' мин назад';
+	if (min < 60) return i18n.t('%s мин назад', min);
 	var h = Math.floor(min / 60);
-	if (h < 24) return h + ' ч ' + (min % 60) + ' мин назад';
-	return new Date(ts * 1000).toLocaleString();
+	if (h < 24) return i18n.t('%s ч %s мин назад', h, min % 60);
+	return new Date(ts * 1000).toLocaleString(i18n.getLang() === 'en' ? 'en-US' : 'ru-RU');
 }
 
 /* скелетон-заглушки: страница не висит пустой, пока идёт ubus-запрос */
@@ -291,12 +313,12 @@ function skelRows(n) {
 
 function actBadge(action, adaptiveProxy) {
 	var map = {
-		proxy:   [ '→ Прокси', 'proxy' ],
-		direct:  [ '→ Напрямую', 'direct' ],
-		block:   [ '✕ Блок', 'block' ],
-		antidpi: [ '⚡ Оптимизация', 'antidpi' ]
+		proxy:   [ i18n.t('→ Прокси'), 'proxy' ],
+		direct:  [ i18n.t('→ Напрямую'), 'direct' ],
+		block:   [ i18n.t('✕ Блок'), 'block' ],
+		antidpi: [ i18n.t('⚡ Оптимизация'), 'antidpi' ]
 	};
-	if (adaptiveProxy) return E('span', { 'class': 'fn-act adaptive-proxy' }, '⚡→Прокси (авто)');
+	if (adaptiveProxy) return E('span', { 'class': 'fn-act adaptive-proxy' }, i18n.t('⚡→Прокси (авто)'));
 	var m = map[action] || map.proxy;
 	return E('span', { 'class': 'fn-act ' + m[1] }, m[0]);
 }
@@ -405,7 +427,7 @@ function mkTransport(q) {
 
 function parseVless(link) {
 	var p = urlParts(link, 'vless');
-	if (!p.host || !p.port || !p.user) throw 'vless: не хватает host/port/uuid';
+	if (!p.host || !p.port || !p.user) throw i18n.t('vless: не хватает host/port/uuid');
 	var o = { type: 'vless', tag: p.name || p.host, server: p.host, server_port: p.port, uuid: p.user };
 	if (p.query.flow) o.flow = p.query.flow;
 	var sec = p.query.security || 'none';
@@ -425,7 +447,7 @@ function parseVless(link) {
 
 function parseTrojan(link) {
 	var p = urlParts(link, 'trojan');
-	if (!p.host || !p.port) throw 'trojan: не хватает host/port';
+	if (!p.host || !p.port) throw i18n.t('trojan: не хватает host/port');
 	var o = {
 		type: 'trojan', tag: p.name || p.host, server: p.host, server_port: p.port,
 		password: p.user,
@@ -443,7 +465,7 @@ function parseTrojan(link) {
 
 function parseHy2(link, proto) {
 	var p = urlParts(link, proto);
-	if (!p.host || !p.port) throw 'hysteria2: не хватает host/port';
+	if (!p.host || !p.port) throw i18n.t('hysteria2: не хватает host/port');
 	var o = {
 		type: 'hysteria2', tag: p.name || p.host, server: p.host, server_port: p.port,
 		password: p.user,
@@ -461,7 +483,7 @@ function parseHy2(link, proto) {
 function parseTuic(link) {
 	var p = urlParts(link, 'tuic');
 	var up = p.user.split(':');
-	if (!p.host || !p.port || up.length < 2) throw 'tuic: нужен uuid:password@host:port';
+	if (!p.host || !p.port || up.length < 2) throw i18n.t('tuic: нужен uuid:password@host:port');
 	var o = {
 		type: 'tuic', tag: p.name || p.host, server: p.host, server_port: p.port,
 		uuid: up[0], password: up.slice(1).join(':'),
@@ -508,7 +530,7 @@ function parseSS(link) {
 		var hp2 = dec.slice(at2 + 1).match(/^(\[[0-9a-fA-F:.]+\]|[^:]*):?(\d*)$/);
 		host = hp2[1].replace(/^\[|\]$/g, ''); port = parseInt(hp2[2] || '0', 10);
 	}
-	if (!host || !port || !method) throw 'ss: не смог разобрать ссылку';
+	if (!host || !port || !method) throw i18n.t('ss: не смог разобрать ссылку');
 	try { password = decodeURIComponent(password); } catch (e) {}
 	var o = { type: 'shadowsocks', tag: name || host, server: host, server_port: port, method: method, password: password };
 	return { outbound: o, meta: { label: o.tag, type: 'shadowsocks', server: host, port: port, reality: false } };
@@ -531,7 +553,7 @@ function parseVmess(link) {
 	} else if (j.net === 'grpc') {
 		o.transport = { type: 'grpc', service_name: j.path || '' };
 	}
-	if (!o.server || !o.server_port || !o.uuid) throw 'vmess: не хватает add/port/id';
+	if (!o.server || !o.server_port || !o.uuid) throw i18n.t('vmess: не хватает add/port/id');
 	return { outbound: o, meta: { label: o.tag, type: 'vmess', server: o.server, port: o.server_port, reality: false } };
 }
 
@@ -550,7 +572,7 @@ function parseShareLink(link) {
 	} catch (e) {
 		return { error: String(e) };
 	}
-	return { error: 'неизвестный протокол: ' + proto };
+	return { error: i18n.t('неизвестный протокол: %s', proto) };
 }
 
 /* ---------- метрики (Wave 3.5) ---------- */
@@ -560,13 +582,13 @@ function fmtBytes(n) {
 	if (n == null || isNaN(n)) return '—';
 	n = Number(n);
 	if (n < 0) n = 0;
-	if (n < 1024) return Math.round(n) + ' Б';
+	if (n < 1024) return Math.round(n) + ' ' + i18n.t('Б');
 	var u = [ 'КБ', 'МБ', 'ГБ', 'ТБ' ], i = -1;
 	do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
-	return (n >= 100 ? Math.round(n) : n.toFixed(n >= 10 ? 1 : 2)) + ' ' + u[i];
+	return (n >= 100 ? Math.round(n) : n.toFixed(n >= 10 ? 1 : 2)) + ' ' + i18n.t(u[i]);
 }
 
-function fmtRate(n) { return fmtBytes(n) + '/с'; }
+function fmtRate(n) { return fmtBytes(n) + i18n.t('/с'); }
 
 /* человеческая длительность: 3488248 → "40 д 8 ч" */
 function fmtUptime(sec) {
@@ -574,10 +596,10 @@ function fmtUptime(sec) {
 	sec = Math.floor(sec);
 	var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600),
 		m = Math.floor(sec % 3600 / 60);
-	if (d > 0) return d + ' д ' + h + ' ч';
-	if (h > 0) return h + ' ч ' + m + ' мин';
-	if (m > 0) return m + ' мин';
-	return sec + ' с';
+	if (d > 0) return i18n.t('%s д %s ч', d, h);
+	if (h > 0) return i18n.t('%s ч %s мин', h, m);
+	if (m > 0) return i18n.t('%s мин', m);
+	return i18n.t('%s с', sec);
 }
 
 /* Мини area-chart на canvas без внешних библиотек (LuCI их не тащит).
@@ -600,7 +622,7 @@ function drawArea(canvas, data, opts) {
 		ctx.fillStyle = 'rgba(255,255,255,.25)';
 		ctx.font = '11px sans-serif';
 		ctx.textAlign = 'center';
-		ctx.fillText('данные накапливаются…', w / 2, h / 2 + 4);
+		ctx.fillText(i18n.t('данные накапливаются…'), w / 2, h / 2 + 4);
 		return;
 	}
 
@@ -689,6 +711,10 @@ return baseclass.extend({
 	fmtRate: fmtRate,
 	fmtUptime: fmtUptime,
 	drawArea: drawArea,
+	/* i18n: _t('русская строка' [, %s…]) и _p(n, [ru1,ru2,ru5], [en1,en2]) */
+	_t: function() { return i18n.t.apply(i18n, arguments); },
+	_p: function(n, ruForms, enForms) { return i18n.p(n, ruForms, enForms); },
+	getLang: function() { return i18n.getLang(); },
 	notify: function(msg) {
 		if (window.ui && ui.addTimeLimitedNotification)
 			ui.addTimeLimitedNotification(null, E('p', msg), 2500);
@@ -699,9 +725,9 @@ return baseclass.extend({
 			E('div', { 'class': 'fn-rowitem', style: 'border:none;padding:4px 0' }, [
 				E('span', { 'class': 'fn-dot y' }),
 				E('div', [
-					E('div', { 'class': 'fn-rowname' }, what + ': метод пока недоступен'),
+					E('div', { 'class': 'fn-rowname' }, i18n.t('%s: метод пока недоступен', what)),
 					E('div', { 'class': 'fn-card-sub' },
-						'Бэкенд ещё не отвечает на этот ubus-вызов — появится после обновления backend-части Морока.')
+						i18n.t('Бэкенд ещё не отвечает на этот ubus-вызов — появится после обновления backend-части Морока.'))
 				])
 			])
 		]);
