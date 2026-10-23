@@ -162,6 +162,10 @@ Install on OpenWrt 23.05/24.10/25.x or GL.iNet Flint 2:
 curl -fsSL https://cdn.jsdelivr.net/gh/akurach/morok@main/build/install.sh | sh
 ```
 
+The UI speaks Russian and English (RU/EN switcher in the sidebar):
+
+![Dashboard in English](docs/screenshots/dashboard-en.png)
+
 Disclaimer: Morok is a tool for managing your own network traffic and for
 network research. You are responsible for complying with the laws of your
 jurisdiction. Docs are in Russian: [docs/](docs/). License: GPL-3.0.
