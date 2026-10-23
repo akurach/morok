@@ -129,14 +129,20 @@ var poll = {
 	stop: function() {}
 };
 
-/* ---------- uci: маркет зовёт load() в load(), остальное — по кликам ---------- */
+/* ---------- uci: маркет зовёт load() в load(), остальное — по кликам;
+   get() читает window.MOROK_MOCK_UCI ('<cfg>.<sid>.<opt>') из mock-data ---------- */
 var __uciN = 0;
 var uci = {
 	load: function() { return Promise.resolve(true); },
 	save: function() { return Promise.resolve(true); },
 	add: function() { return 'cfg' + (++__uciN) + 'mock'; },
 	set: function() { return true; },
-	get: function() { return null; }
+	get: function(cfg, sid, opt) {
+		var m = window.MOROK_MOCK_UCI || {};
+		if (opt == null) return m[cfg + '.' + sid] != null ? 'section' : null;
+		var v = m[cfg + '.' + sid + '.' + opt];
+		return v != null ? v : null;
+	}
 };
 
 /* ---------- загрузчик модулей по 'require'-директивам ---------- */
