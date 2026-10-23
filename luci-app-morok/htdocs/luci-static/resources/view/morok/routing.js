@@ -16,34 +16,34 @@ return view.extend({
 	/* модалка переименования правила */
 	showRenameRule: function(r) {
 		var input = E('input', { value: r.label || '', style: 'width:100%' });
-		var saveBtn = E('button', { 'class': 'fn-btn primary' }, 'Сохранить');
+		var saveBtn = E('button', { 'class': 'fn-btn primary' }, fn._t('Сохранить'));
 		saveBtn.addEventListener('click', function() {
 			var v = input.value.trim();
-			if (!v) { fn.notify('Название не может быть пустым'); return; }
+			if (!v) { fn.notify(fn._t('Название не может быть пустым')); return; }
 			saveBtn.disabled = true;
-			saveBtn.textContent = 'Сохраняю…';
+			saveBtn.textContent = fn._t('Сохраняю…');
 			fn.call.renameRule(r.id, v).then(function(res) {
 				if (res && res.ok === false) {
 					saveBtn.disabled = false;
-					saveBtn.textContent = 'Сохранить';
-					fn.notify(res.error || 'Не удалось переименовать');
+					saveBtn.textContent = fn._t('Сохранить');
+					fn.notify(res.error || fn._t('Не удалось переименовать'));
 					return;
 				}
 				ui.hideModal();
-				fn.notify('Правило переименовано');
+				fn.notify(fn._t('Правило переименовано'));
 				setTimeout(function() { location.reload(); }, 700);
 			})['catch'](function() {
 				saveBtn.disabled = false;
-				saveBtn.textContent = 'Сохранить';
-				fn.notify('Метод rename_rule пока недоступен');
+				saveBtn.textContent = fn._t('Сохранить');
+				fn.notify(fn._t('Метод rename_rule пока недоступен'));
 			});
 		});
-		ui.showModal('Переименовать правило', [
+		ui.showModal(fn._t('Переименовать правило'), [
 			E('div', { 'class': 'fn-card-sub', style: 'margin-bottom:10px' },
-				'Меняется только название — условия и действие остаются.'),
+				fn._t('Меняется только название — условия и действие остаются.')),
 			input,
 			E('div', { style: 'display:flex;gap:10px;justify-content:flex-end;margin-top:16px' }, [
-				E('button', { 'class': 'fn-btn', click: ui.hideModal }, 'Отмена'),
+				E('button', { 'class': 'fn-btn', click: ui.hideModal }, fn._t('Отмена')),
 				saveBtn
 			])
 		]);
@@ -58,13 +58,13 @@ return view.extend({
 		var t = order[i]; order[i] = order[j]; order[j] = t;
 		fn.call.reorderRules(order).then(function(res) {
 			if (res && res.ok === false) {
-				fn.notify(res.error || 'Не удалось изменить порядок');
+				fn.notify(res.error || fn._t('Не удалось изменить порядок'));
 				return;
 			}
-			fn.notify('Порядок сохранён — первое совпавшее правило побеждает');
+			fn.notify(fn._t('Порядок сохранён — первое совпавшее правило побеждает'));
 			setTimeout(function() { location.reload(); }, 600);
 		})['catch'](function() {
-			fn.notify('Метод reorder_rules пока недоступен');
+			fn.notify(fn._t('Метод reorder_rules пока недоступен'));
 		});
 	},
 
@@ -74,14 +74,14 @@ return view.extend({
 		var matchDesc = {
 			geosite: 'geosite: ' + (r.match || []).join(', '),
 			geosite_geoip: 'geosite/geoip: ' + (r.match || []).join(', '),
-			custom: 'custom: ' + (r.match || []).join(', ') + ' (' + (r.match || []).length + ' дом.)',
-			source_list: 'список: ' + r.source,
-			final: 'конечное правило · применяется последним'
+			custom: 'custom: ' + (r.match || []).join(', ') + fn._t(' (%s дом.)', (r.match || []).length),
+			source_list: fn._t('список: %s', r.source),
+			final: fn._t('конечное правило · применяется последним')
 		}[r.match_type] || r.match_type;
 
-		var upBtn = E('button', { 'class': 'fn-btn sm', title: 'Выше — сработает раньше',
+		var upBtn = E('button', { 'class': 'fn-btn sm', title: fn._t('Выше — сработает раньше'),
 			click: function() { self.moveRule(r.id, -1); } }, '↑');
-		var downBtn = E('button', { 'class': 'fn-btn sm', title: 'Ниже — сработает позже',
+		var downBtn = E('button', { 'class': 'fn-btn sm', title: fn._t('Ниже — сработает позже'),
 			click: function() { self.moveRule(r.id, 1); } }, '↓');
 		// disabled — свойством: E() кладёт атрибут даже со значением false
 		upBtn.disabled = isFinal || idx === 0;
@@ -91,30 +91,30 @@ return view.extend({
 			fn.toggle(r.enabled, false, function(on) {
 				fn.call.setRule(r.id, on).then(function() {
 					row.classList.toggle('off', !on);
-					fn.notify('Правило «' + r.label + '»: ' + (on ? 'вкл' : 'выкл'));
+					fn.notify(fn._t('Правило «%s»: %s', r.label, on ? fn._t('вкл') : fn._t('выкл')));
 				});
 			}),
 			E('div', { style: 'flex:1;min-width:0' }, [
 				E('div', { 'class': 'fn-rowname' }, [
 					r.label,
 					isFinal ? E('span', { 'class': 'fn-badge' }, 'final') : '',
-					r.action === 'antidpi' ? E('span', { 'class': 'fn-badge violet' }, 'адаптивное') : ''
+					r.action === 'antidpi' ? E('span', { 'class': 'fn-badge violet' }, fn._t('адаптивное')) : ''
 				]),
 				E('div', { 'class': 'fn-rowsub' }, matchDesc)
 			]),
 			fn.actBadge(r.action),
 			E('div', { style: 'display:flex;gap:6px;flex-shrink:0' }, [
 				upBtn, downBtn,
-				E('button', { 'class': 'fn-btn sm', title: 'Переименовать',
+				E('button', { 'class': 'fn-btn sm', title: fn._t('Переименовать'),
 					click: function() { self.showRenameRule(r); } }, '✎'),
-				E('button', { 'class': 'fn-btn sm', title: 'Удалить правило',
+				E('button', { 'class': 'fn-btn sm', title: fn._t('Удалить правило'),
 					click: function() {
-						if (!confirm('Удалить правило «' + r.label + '»?')) return;
+						if (!confirm(fn._t('Удалить правило «%s»?', r.label))) return;
 						fn.call.delRule(r.id).then(function(res) {
-							if (res && res.ok === false) { fn.notify(res.error || 'Не удалось удалить'); return; }
-							fn.notify('Правило удалено');
+							if (res && res.ok === false) { fn.notify(res.error || fn._t('Не удалось удалить')); return; }
+							fn.notify(fn._t('Правило удалено'));
 							row.remove();
-						})['catch'](function() { fn.notify('Метод del_rule недоступен'); });
+						})['catch'](function() { fn.notify(fn._t('Метод del_rule недоступен')); });
 					} }, '🗑')
 			])
 		]);
@@ -123,15 +123,15 @@ return view.extend({
 
 	/* Wave 2 (2.3): карточка «Проверить домен» — кого куда пустит конфиг */
 	renderDomainCheck: function() {
-		var input = E('input', { placeholder: 'Домен — например: youtube.com', style: 'flex:2;min-width:180px' });
+		var input = E('input', { placeholder: fn._t('Домен — например: youtube.com'), style: 'flex:2;min-width:180px' });
 		var resBox = E('div');
-		var btn = E('button', { 'class': 'fn-btn primary' }, 'Проверить');
+		var btn = E('button', { 'class': 'fn-btn primary' }, fn._t('Проверить'));
 
 		function showResult(domain, res) {
 			resBox.textContent = '';
 			if (!res) {
 				resBox.appendChild(E('div', { 'class': 'fn-domres' }, [
-					E('span', { 'class': 'fn-pill y' }, 'метод check_domain пока недоступен')
+					E('span', { 'class': 'fn-pill y' }, fn._t('метод check_domain пока недоступен'))
 				]));
 				return;
 			}
@@ -140,7 +140,7 @@ return view.extend({
 				resBox.appendChild(E('div', { 'class': 'fn-domres' }, [
 					E('span', { 'class': 'dname' }, domain),
 					E('span', { 'class': 'darrow' }, '→'),
-					E('span', { 'class': 'drule' }, 'ни одно правило не совпало'),
+					E('span', { 'class': 'drule' }, fn._t('ни одно правило не совпало')),
 					E('span', { 'class': 'darrow' }, '→'),
 					fn.actBadge('direct')
 				]));
@@ -151,13 +151,13 @@ return view.extend({
 			resBox.appendChild(E('div', { 'class': 'fn-domres fn-domres-verdict' }, [
 				E('span', { 'class': 'dname' }, domain),
 				E('span', { 'class': 'darrow' }, '→'),
-				E('span', { 'class': 'drule' }, [ E('b', 'ИТОГ: '), (w.rule_label || w.rule_id || '?') + (w.source ? ' · ' + w.source : '') ]),
+				E('span', { 'class': 'drule' }, [ E('b', fn._t('ИТОГ: ')), (w.rule_label || w.rule_id || '?') + (w.source ? ' · ' + w.source : '') ]),
 				E('span', { 'class': 'darrow' }, '→'),
 				fn.actBadge(w.action)
 			]));
 			if (matches.length > 1) {
 				resBox.appendChild(E('div', { 'class': 'fn-card-sub', style: 'margin:8px 0 2px;opacity:.55' },
-					'матчатся, но НЕ сработают — перекрыты первым правилом:'));
+					fn._t('матчатся, но НЕ сработают — перекрыты первым правилом:')));
 				matches.slice(1).forEach(function(m) {
 					resBox.appendChild(E('div', { 'class': 'fn-domres', style: 'opacity:.45' }, [
 						E('span', { 'class': 'dname' }, '″'),
@@ -173,13 +173,13 @@ return view.extend({
 
 		function run() {
 			var d = input.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-			if (!d) { fn.notify('Введи домен'); return; }
+			if (!d) { fn.notify(fn._t('Введи домен')); return; }
 			btn.disabled = true;
 			btn.textContent = '';
 			btn.appendChild(E('span', { 'class': 'fn-spin' }));
 			L.resolveDefault(fn.call.checkDomain(d), null).then(function(res) {
 				btn.disabled = false;
-				btn.textContent = 'Проверить';
+				btn.textContent = fn._t('Проверить');
 				showResult(d, res);
 			});
 		}
@@ -187,8 +187,8 @@ return view.extend({
 		input.addEventListener('keydown', function(ev) { if (ev.key === 'Enter') run(); });
 
 		return E('div', { 'class': 'fn-card', style: 'margin-bottom:16px' }, [
-			E('div', { 'class': 'fn-card-title' }, 'Проверить домен'),
-			E('div', { 'class': 'fn-card-sub' }, 'какое правило сработает и куда пойдёт трафик'),
+			E('div', { 'class': 'fn-card-title' }, fn._t('Проверить домен')),
+			E('div', { 'class': 'fn-card-sub' }, fn._t('какое правило сработает и куда пойдёт трафик')),
 			E('div', { 'class': 'fn-add fn-mt' }, [ input, btn ]),
 			resBox
 		]);
@@ -202,10 +202,10 @@ return view.extend({
 		});
 		var filterState = { action: null };
 		var defs = [
-			[ 'proxy', '→ Прокси' ],
-			[ 'antidpi', '⚡ Оптимизация' ],
-			[ 'direct', '→ Напрямую' ],
-			[ 'block', '✕ Блок' ]
+			[ 'proxy', fn._t('→ Прокси') ],
+			[ 'antidpi', fn._t('⚡ Оптимизация') ],
+			[ 'direct', fn._t('→ Напрямую') ],
+			[ 'block', fn._t('✕ Блок') ]
 		];
 		var chips = defs.map(function(d) {
 			var chip = E('span', { 'class': 'fn-act ' + d[0] }, [
@@ -255,23 +255,23 @@ return view.extend({
 			// кнопка-заглушка «нет источника» только путала
 			if (!src) return;
 			if (hasRule(src)) {
-				buttons.push(E('button', { 'class': 'fn-btn sm', disabled: 'disabled' }, '✓ ' + p.label + ' добавлено'));
+				buttons.push(E('button', { 'class': 'fn-btn sm', disabled: 'disabled' }, fn._t('✓ %s добавлено', p.label)));
 				return;
 			}
-			var b = E('button', { 'class': 'fn-btn sm', title: 'источник: ' + src.label }, '+ ' + p.label);
+			var b = E('button', { 'class': 'fn-btn sm', title: fn._t('источник: %s', src.label) }, '+ ' + p.label);
 			b.addEventListener('click', function() {
 				b.disabled = true;
 				fn.call.addRule(p.label, src.id, p.action).then(function(res) {
 					if (res && res.ok === false) {
 						b.disabled = false;
-						fn.notify(res.error || 'Не удалось добавить правило');
+						fn.notify(res.error || fn._t('Не удалось добавить правило'));
 						return;
 					}
-					fn.notify('Правило «' + p.label + '» добавлено — не забудь «Применить» на дашборде');
+					fn.notify(fn._t('Правило «%s» добавлено — не забудь «Применить» на дашборде', p.label));
 					setTimeout(function() { location.reload(); }, 800);
 				})['catch'](function() {
 					b.disabled = false;
-					fn.notify('Метод add_rule недоступен');
+					fn.notify(fn._t('Метод add_rule недоступен'));
 				});
 			});
 			buttons.push(b);
@@ -279,8 +279,8 @@ return view.extend({
 		// ни один пресет не backed реальным источником — карточку не рисуем
 		if (buttons.length === 0) return E('div');
 		return E('div', { 'class': 'fn-card', style: 'margin-bottom:16px' }, [
-			E('div', { 'class': 'fn-card-title' }, 'Быстрые пресеты'),
-			E('div', { 'class': 'fn-card-sub' }, 'один клик — готовое правило по подключённому списку'),
+			E('div', { 'class': 'fn-card-title' }, fn._t('Быстрые пресеты')),
+			E('div', { 'class': 'fn-card-sub' }, fn._t('один клик — готовое правило по подключённому списку')),
 			E('div', { 'class': 'fn-presets fn-mt' }, buttons)
 		]);
 	},
@@ -308,10 +308,10 @@ return view.extend({
 		// активные — порядок важен: первое совпавшее правило побеждает
 		this.rulesOrder = active.map(function(r) { return r.id; });
 		root.appendChild(E('div', { 'class': 'fn-section' }, [
-			'Активные правила', E('span', { 'class': 'cnt' }, String(active.length))
+			fn._t('Активные правила'), E('span', { 'class': 'cnt' }, String(active.length))
 		]));
 		root.appendChild(E('div', { 'class': 'fn-card-sub', style: 'margin:-4px 4px 10px' },
-			'Порядок сверху вниз: первое совпавшее правило побеждает. Стрелки ↑↓ меняют порядок и сохраняют сразу.'));
+			fn._t('Порядок сверху вниз: первое совпавшее правило побеждает. Стрелки ↑↓ меняют порядок и сохраняют сразу.')));
 		var g1 = E('div', { 'class': 'fn-group' });
 		active.forEach(function(r, i) { g1.appendChild(self.ruleRow(r, i, active.length)); });
 		root.appendChild(g1);
@@ -319,7 +319,7 @@ return view.extend({
 		// отключённые
 		if (disabled.length) {
 			root.appendChild(E('div', { 'class': 'fn-section' }, [
-				'Отключённые', E('span', { 'class': 'cnt' }, String(disabled.length))
+				fn._t('Отключённые'), E('span', { 'class': 'cnt' }, String(disabled.length))
 			]));
 			var g2 = E('div', { 'class': 'fn-group' });
 			disabled.forEach(function(r) { g2.appendChild(self.ruleRow(r, -1, 0)); });
@@ -327,53 +327,53 @@ return view.extend({
 		}
 
 		// добавить правило
-		root.appendChild(E('div', { 'class': 'fn-section' }, 'Добавить своё правило'));
-		var input = E('input', { placeholder: 'Домен или IP — например: meduza.io, 203.0.113.0/24' });
+		root.appendChild(E('div', { 'class': 'fn-section' }, fn._t('Добавить своё правило')));
+		var input = E('input', { placeholder: fn._t('Домен или IP — например: example.com, 203.0.113.0/24') });
 		var select = E('select', [
-			E('option', { value: 'proxy' }, '→ Прокси'),
-			E('option', { value: 'direct' }, '→ Напрямую'),
-			E('option', { value: 'antidpi' }, '⚡ Оптимизация'),
-			E('option', { value: 'block' }, '✕ Блок')
+			E('option', { value: 'proxy' }, fn._t('→ Прокси')),
+			E('option', { value: 'direct' }, fn._t('→ Напрямую')),
+			E('option', { value: 'antidpi' }, fn._t('⚡ Оптимизация')),
+			E('option', { value: 'block' }, fn._t('✕ Блок'))
 		]);
 		root.appendChild(E('div', { 'class': 'fn-card' }, [
 			E('div', { 'class': 'fn-add' }, [
 				input, select,
 				E('button', { 'class': 'fn-btn primary', click: function() {
 					var v = input.value.trim();
-					if (!v) { fn.notify('Сначала введи домен или IP'); return; }
+					if (!v) { fn.notify(fn._t('Сначала введи домен или IP')); return; }
 					fn.call.addRule(v, v, select.value).then(function() {
-						fn.notify('Правило добавлено — не забудь «Применить» на дашборде');
+						fn.notify(fn._t('Правило добавлено — не забудь «Применить» на дашборде'));
 						setTimeout(function() { location.reload(); }, 800);
 					});
-				} }, 'Добавить')
+				} }, fn._t('Добавить'))
 			]),
 			E('div', { 'class': 'fn-card-sub fn-mt' },
-				'Правила применяются сверху вниз — первое совпавшее побеждает. Сложные условия (несколько доменов, regex) — в следующих версиях.')
+				fn._t('Правила применяются сверху вниз — первое совпавшее побеждает. Сложные условия (несколько доменов, regex) — в следующих версиях.'))
 		]));
 
 		// источники списков
-		root.appendChild(E('div', { 'class': 'fn-section' }, 'Источники списков'));
+		root.appendChild(E('div', { 'class': 'fn-section' }, fn._t('Источники списков')));
 		var srcCard = E('div', { 'class': 'fn-card' });
 		sources.forEach(function(s) {
-			var updBtn = E('button', { 'class': 'fn-btn sm' }, '↻ Обновить сейчас');
+			var updBtn = E('button', { 'class': 'fn-btn sm' }, fn._t('↻ Обновить сейчас'));
 			updBtn.addEventListener('click', function() {
 				updBtn.disabled = true;
 				updBtn.innerHTML = '';
 				updBtn.appendChild(E('span', { 'class': 'fn-spin' }));
-				updBtn.appendChild(document.createTextNode(' Обновляю…'));
+				updBtn.appendChild(document.createTextNode(fn._t(' Обновляю…')));
 				fn.call.updateSource(s.id).then(function(res) {
 					updBtn.disabled = false;
-					updBtn.textContent = '↻ Обновить сейчас';
+					updBtn.textContent = fn._t('↻ Обновить сейчас');
 					if (res && res.ok === false) {
-						fn.notify('«' + s.label + '»: ' + (res.error || 'ошибка обновления'));
+						fn.notify(fn._t('«%s»: %s', s.label, res.error || fn._t('ошибка обновления')));
 						return;
 					}
-					fn.notify('«' + s.label + '»: обновлено' +
-						(res && res.count != null ? ' (' + res.count + ' записей)' : ''));
+					fn.notify(fn._t('«%s»: %s', s.label, fn._t('обновлено') +
+						(res && res.count != null ? fn._t(' (%s записей)', res.count) : '')));
 				})['catch'](function() {
 					updBtn.disabled = false;
-					updBtn.textContent = '↻ Обновить сейчас';
-					fn.notify('Метод update_source пока недоступен');
+					updBtn.textContent = fn._t('↻ Обновить сейчас');
+					fn.notify(fn._t('Метод update_source пока недоступен'));
 				});
 			});
 			srcCard.appendChild(E('div', { 'class': 'fn-opt' }, [
@@ -382,19 +382,19 @@ return view.extend({
 					E('div', { 'class': 'fn-opt-name' }, s.label),
 					E('div', { 'class': 'fn-rowsub', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, s.url)
 				]),
-				E('span', { 'class': 'fn-pill dim' }, Math.round(s.update_interval / 3600) + ' ч'),
+				E('span', { 'class': 'fn-pill dim' }, fn._t('%s ч', Math.round(s.update_interval / 3600))),
 				updBtn,
 				fn.toggle(s.enabled, false, function(on, input) {
 					fn.call.setSource(s.id, on, s.url || '', s.update_interval || 0).then(function(res) {
 						if (res && res.ok === false) {
 							input.checked = !on;
-							fn.notify(res.error || 'Не удалось переключить источник');
+							fn.notify(res.error || fn._t('Не удалось переключить источник'));
 							return;
 						}
-						fn.notify('Источник «' + s.label + '»: ' + (on ? 'вкл' : 'выкл'));
+						fn.notify(fn._t('Источник «%s»: %s', s.label, on ? fn._t('вкл') : fn._t('выкл')));
 					})['catch'](function() {
 						input.checked = !on;
-						fn.notify('Метод set_source пока недоступен');
+						fn.notify(fn._t('Метод set_source пока недоступен'));
 					});
 				})
 			]));
