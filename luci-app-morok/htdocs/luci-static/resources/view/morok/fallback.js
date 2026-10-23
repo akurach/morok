@@ -31,11 +31,11 @@ return view.extend({
 			var cname = n ? fn.labelParts(n.label) : [ id ];
 			chainBox.appendChild(E('div', { 'class': 'fn-chain-card' + (i === 0 ? ' primary' : '') }, [
 				E('div', { 'class': 'fn-spread' }, [
-					E('div', { 'class': 'role' }, i === 0 ? 'Основная' : 'Резерв ' + i),
+					E('div', { 'class': 'role' }, i === 0 ? fn._t('Основная') : fn._t('Резерв %s', i)),
 					E('div', { 'class': 'fn-chain-ctl' }, [
-						self.ctlBtn('←', 'Раньше в цепочке', i === 0, function() { self.moveChain(i, -1, container); }),
-						self.ctlBtn('→', 'Позже в цепочке', i === self.chain.length - 1, function() { self.moveChain(i, 1, container); }),
-						self.ctlBtn('✕', 'Убрать из цепочки', false, function() {
+						self.ctlBtn('←', fn._t('Раньше в цепочке'), i === 0, function() { self.moveChain(i, -1, container); }),
+						self.ctlBtn('→', fn._t('Позже в цепочке'), i === self.chain.length - 1, function() { self.moveChain(i, 1, container); }),
+						self.ctlBtn('✕', fn._t('Убрать из цепочки'), false, function() {
 							self.chain.splice(i, 1);
 							self.markDirty();
 							self.renderChainEditor(container);
@@ -46,47 +46,47 @@ return view.extend({
 				E('div', { 'class': 'cmeta' }, [
 					n ? fn.metricCell(n) : '',
 					E('div', n
-						? n.type + ' · ' + n.server + (n.enabled ? '' : ' · выключена — urltest её пропустит')
-						: 'нода не найдена — убери её из цепочки')
+						? n.type + ' · ' + n.server + (n.enabled ? '' : fn._t(' · выключена — urltest её пропустит'))
+						: fn._t('нода не найдена — убери её из цепочки'))
 				])
 			]));
 		});
 		if (this.chain.length === 0)
 			chainBox.appendChild(E('div', { 'class': 'fn-card-sub', style: 'padding:14px 4px' },
-				'Цепочка пуста — добавь ноды из пула ниже. Первая в цепочке становится основной.'));
+				fn._t('Цепочка пуста — добавь ноды из пула ниже. Первая в цепочке становится основной.')));
 		container.appendChild(chainBox);
 
 		/* ---- панель действий ---- */
-		var saveBtn = E('button', { 'class': 'fn-btn primary' }, 'Сохранить цепочку');
+		var saveBtn = E('button', { 'class': 'fn-btn primary' }, fn._t('Сохранить цепочку'));
 		saveBtn.disabled = !this.dirty;
 		saveBtn.addEventListener('click', function() {
 			saveBtn.disabled = true;
-			saveBtn.textContent = 'Сохраняю…';
+			saveBtn.textContent = fn._t('Сохраняю…');
 			fn.call.setChain(self.chain.slice()).then(function(res) {
 				if (res && res.ok === false) {
 					saveBtn.disabled = false;
-					saveBtn.textContent = 'Сохранить цепочку';
-					fn.notify(res.error || 'Не удалось сохранить цепочку');
+					saveBtn.textContent = fn._t('Сохранить цепочку');
+					fn.notify(res.error || fn._t('Не удалось сохранить цепочку'));
 					return;
 				}
-				fn.notify('Цепочка сохранена — применяется…');
+				fn.notify(fn._t('Цепочка сохранена — применяется…'));
 				setTimeout(function() { location.reload(); }, 1200);
 			})['catch'](function() {
 				saveBtn.disabled = false;
-				saveBtn.textContent = 'Сохранить цепочку';
-				fn.notify('Метод set_chain пока недоступен');
+				saveBtn.textContent = fn._t('Сохранить цепочку');
+				fn.notify(fn._t('Метод set_chain пока недоступен'));
 			});
 		});
 
-		var autoBtn = E('button', { 'class': 'fn-btn' }, '⚡ Подобрать 3 быстрейшие');
+		var autoBtn = E('button', { 'class': 'fn-btn' }, fn._t('⚡ Подобрать 3 быстрейшие'));
 		autoBtn.addEventListener('click', function() {
 			autoBtn.disabled = true;
-			autoBtn.textContent = 'Проверяем ноды…';
+			autoBtn.textContent = fn._t('Проверяем ноды…');
 			fn.call.testNodes().then(function(res) {
 				autoBtn.disabled = false;
-				autoBtn.textContent = '⚡ Подобрать 3 быстрейшие';
+				autoBtn.textContent = fn._t('⚡ Подобрать 3 быстрейшие');
 				if (!res || res.ok === false) {
-					fn.notify((res && res.error) || 'sing-box не запущен — проверка невозможна');
+					fn.notify((res && res.error) || fn._t('sing-box не запущен — проверка невозможна'));
 					return;
 				}
 				// новый контракт: results:[{id,tcp_ms,url_ms,dns_ok}]; старый: delays{id:ms}
@@ -107,17 +107,17 @@ return view.extend({
 					return self.nodes[id].enabled && speed[id] != null;
 				}).sort(function(a, b) { return speed[a] - speed[b]; }).slice(0, 3);
 				if (best.length === 0) {
-					fn.notify('Ни одна включённая нода не ответила — цепочка не изменена');
+					fn.notify(fn._t('Ни одна включённая нода не ответила — цепочка не изменена'));
 					return;
 				}
 				self.chain = best;
 				self.markDirty();
 				self.renderChainEditor(container);
-				fn.notify('Подобрано ' + best.length + ' — нажми «Сохранить цепочку»');
+				fn.notify(fn._t('Подобрано %s — нажми «Сохранить цепочку»', best.length));
 			})['catch'](function() {
 				autoBtn.disabled = false;
-				autoBtn.textContent = '⚡ Подобрать 3 быстрейшие';
-				fn.notify('Проверка нод недоступна');
+				autoBtn.textContent = fn._t('⚡ Подобрать 3 быстрейшие');
+				fn.notify(fn._t('Проверка нод недоступна'));
 			});
 		});
 
@@ -129,7 +129,7 @@ return view.extend({
 		var pool = Object.keys(this.nodes).map(function(id) { return self.nodes[id]; })
 			.filter(function(n) { return n.enabled && self.chain.indexOf(n.id) === -1; });
 		if (pool.length) {
-			container.appendChild(E('div', { 'class': 'fn-section' }, 'Пул нод — добавить в цепочку'));
+			container.appendChild(E('div', { 'class': 'fn-section' }, fn._t('Пул нод — добавить в цепочку')));
 			var g = E('div', { 'class': 'fn-group' });
 			pool.forEach(function(n) {
 				g.appendChild(E('div', { 'class': 'fn-rowitem' }, [
@@ -146,12 +146,12 @@ return view.extend({
 							self.markDirty();
 							self.renderChainEditor(container);
 						}
-					}, '+ в цепочку')
+					}, fn._t('+ в цепочку'))
 				]));
 			});
 			container.appendChild(g);
 			container.appendChild(E('div', { 'class': 'fn-card-sub', style: 'margin-top:8px' },
-				'Выключенные ноды здесь не показываются и в цепочку не попадают — включить можно на странице «Пул нод».'));
+				fn._t('Выключенные ноды здесь не показываются и в цепочку не попадают — включить можно на странице «Пул нод».')));
 		}
 	},
 
@@ -197,8 +197,8 @@ return view.extend({
 		var card = E('div', { 'class': 'fn-card' }, [
 			E('div', { 'class': 'fn-spread' }, [
 				E('div', [
-					E('div', { 'class': 'fn-card-title' }, 'Цепочка фоллбэка'),
-					E('div', { 'class': 'fn-card-sub' }, 'если основная нода умирает — трафик уходит на следующую живую (urltest)')
+					E('div', { 'class': 'fn-card-title' }, fn._t('Цепочка фоллбэка')),
+					E('div', { 'class': 'fn-card-sub' }, fn._t('если основная нода умирает — трафик уходит на следующую живую (urltest)'))
 				])
 			]),
 			editorBox
@@ -210,7 +210,7 @@ return view.extend({
 		var urlInput = E('input', { value: fb.test_url || '', style: 'min-width:260px' });
 		urlInput.addEventListener('change', function() {
 			fn.call.setFallback(0, '', fb.auto_return, urlInput.value)
-				.then(function() { fn.notify('URL проверки сохранён'); });
+				.then(function() { fn.notify(fn._t('URL проверки сохранён')); });
 		});
 
 		var thrSeg = E('div', { 'class': 'fn-seg' });
@@ -221,7 +221,7 @@ return view.extend({
 					thrSeg.querySelectorAll('button').forEach(function(b) { b.classList.remove('on'); });
 					this.classList.add('on');
 					fn.call.setFallback(n, '', fb.auto_return, '')
-						.then(function() { fn.notify('Порог переключения: ' + n); });
+						.then(function() { fn.notify(fn._t('Порог переключения: %s', n)); });
 				}
 			}, String(n)));
 		});
@@ -229,26 +229,26 @@ return view.extend({
 		card.appendChild(E('div', [
 			E('div', { 'class': 'fn-opt' }, [
 				E('div', [
-					E('div', { 'class': 'fn-opt-name' }, 'Метод проверки живости'),
-					E('div', { 'class': 'fn-opt-desc' }, 'URL-test: реальный запрос через ноду, а не просто ping')
+					E('div', { 'class': 'fn-opt-name' }, fn._t('Метод проверки живости')),
+					E('div', { 'class': 'fn-opt-desc' }, fn._t('URL-test: реальный запрос через ноду, а не просто ping'))
 				]),
 				urlInput
 			]),
 			E('div', { 'class': 'fn-opt' }, [
 				E('div', [
-					E('div', { 'class': 'fn-opt-name' }, 'Переключаться после'),
-					E('div', { 'class': 'fn-opt-desc' }, 'подряд неудачных проверок')
+					E('div', { 'class': 'fn-opt-name' }, fn._t('Переключаться после')),
+					E('div', { 'class': 'fn-opt-desc' }, fn._t('подряд неудачных проверок'))
 				]),
 				thrSeg
 			]),
 			E('div', { 'class': 'fn-opt' }, [
 				E('div', [
-					E('div', { 'class': 'fn-opt-name' }, 'Возвращаться к основной автоматически'),
-					E('div', { 'class': 'fn-opt-desc' }, 'с задержкой ' + (fb.return_delay || 60) + ' с против флаппинга')
+					E('div', { 'class': 'fn-opt-name' }, fn._t('Возвращаться к основной автоматически')),
+					E('div', { 'class': 'fn-opt-desc' }, fn._t('с задержкой %s с против флаппинга', fb.return_delay || 60))
 				]),
 				fn.toggle(fb.auto_return, false, function(on) {
 					fn.call.setFallback(0, '', on, '')
-						.then(function() { fn.notify('Автовозврат: ' + (on ? 'вкл' : 'выкл')); });
+						.then(function() { fn.notify(fn._t('Автовозврат: %s', on ? fn._t('вкл') : fn._t('выкл'))); });
 				})
 			])
 		]));
@@ -256,9 +256,9 @@ return view.extend({
 		/* ---- kill switch ---- */
 		var ksSeg = E('div', { 'class': 'fn-seg blocky' });
 		[
-			[ 'kill', '🔒 Перекрыть интернет' ],
-			[ 'direct', '⚠️ Пустить напрямую' ],
-			[ 'nothing', '🤷 Ничего' ]
+			[ 'kill', fn._t('🔒 Перекрыть интернет') ],
+			[ 'direct', fn._t('⚠️ Пустить напрямую') ],
+			[ 'nothing', fn._t('🤷 Ничего') ]
 		].forEach(function(pair) {
 			ksSeg.appendChild(E('button', {
 				'class': (fb.kill_switch === pair[0] ? 'on' : '') + (fb.kill_switch === pair[0] && pair[0] === 'kill' ? ' danger-on' : ''),
@@ -268,10 +268,10 @@ return view.extend({
 					if (pair[0] === 'kill') this.classList.add('danger-on');
 					fn.call.setFallback(0, pair[0], fb.auto_return, '').then(function() {
 						fn.notify(pair[0] === 'kill'
-							? 'Kill Switch: при обрыве интернет будет перекрыт'
+							? fn._t('Kill Switch: при обрыве интернет будет перекрыт')
 							: pair[0] === 'direct'
-								? 'Внимание: при обрыве трафик пойдёт через провайдера'
-								: 'При обрыве ничего не произойдёт');
+								? fn._t('Внимание: при обрыве трафик пойдёт через провайдера')
+								: fn._t('При обрыве ничего не произойдёт'));
 					});
 				}
 			}, pair[1]));
@@ -279,24 +279,23 @@ return view.extend({
 
 		root.appendChild(E('div', { 'class': 'fn-ks fn-mt' }, [
 			E('div', { 'class': 'fn-spread' }, [
-				E('div', { 'class': 'fn-ks-title' }, '⚠ Kill Switch')
+				E('div', { 'class': 'fn-ks-title' }, fn._t('⚠ Kill Switch'))
 			]),
 			E('div', { 'class': 'fn-card-sub', style: 'margin-top:8px' },
-				'Что делать, если умерли все ноды в цепочке:'),
+				fn._t('Что делать, если умерли все ноды в цепочке:')),
 			E('div', { class: 'fn-mt' }, ksSeg),
 			E('div', { 'class': 'fn-card-sub fn-mt' },
-				'«Перекрыть интернет» — ни один пакет не уйдёт мимо туннеля: провайдер не увидит, куда ты ходишь, даже пока VPN лежит.')
+				fn._t('«Перекрыть интернет» — ни один пакет не уйдёт мимо туннеля: провайдер не увидит, куда ты ходишь, даже пока VPN лежит.'))
 		]));
 
 		/* ---- сторож правил оптимизации ---- */
 		root.appendChild(E('div', { 'class': 'fn-card fn-mt' }, [
 			E('div', { 'class': 'fn-card-title' }, [
-				'Адаптивные правила оптимизации ',
+				fn._t('Адаптивные правила оптимизации '),
 				E('span', { 'class': 'fn-badge violet' }, 'guardian')
 			]),
 			E('div', { 'class': 'fn-card-sub' },
-				'Сторож проверяет правила «Оптимизация»: если доставка через движок деградирует — правило временно уходит в прокси, ' +
-				'после rescan пытается вернуться. Живой статус — на вкладке «Журнал».')
+				fn._t('Сторож проверяет правила «Оптимизация»: если доставка через движок деградирует — правило временно уходит в прокси, после rescan пытается вернуться. Живой статус — на вкладке «Журнал».'))
 		]));
 
 		return fn.page('fallback', root);

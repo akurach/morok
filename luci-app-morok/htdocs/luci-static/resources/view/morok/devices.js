@@ -25,24 +25,24 @@ return view.extend({
 			if (v === cur) o.selected = true;
 			sel.appendChild(o);
 		}
-		opt('follow', 'Следовать правилам');
-		opt('direct', 'Напрямую');
-		opt('proxy', 'Всегда VPN');
+		opt('follow', fn._t('Следовать правилам'));
+		opt('direct', fn._t('Напрямую'));
+		opt('proxy', fn._t('Всегда VPN'));
 		(nodes || []).forEach(function(n) {
 			if (n.enabled) opt('node:' + n.id, '➤ ' + n.label);
 		});
 		// маршрут на ноду, которой больше нет в пуле — показываем как есть
 		if (cur.indexOf('node:') === 0 && !sel.querySelector('option[value="' + cur + '"]'))
-			opt(cur, '➤ ' + cur.slice(5) + ' (недоступна)');
+			opt(cur, '➤ ' + cur.slice(5) + fn._t(' (недоступна)'));
 		sel.addEventListener('change', function() {
 			sel.disabled = true;
 			fn.call.setDevice(d.mac, sel.value, d.label || '', d.enabled !== false).then(function(res) {
 				sel.disabled = false;
-				if (res && res.ok === false) { fn.notify(res.error || 'Не удалось сохранить маршрут'); return; }
-				fn.notify((d.label || d.hostname || d.mac) + ': маршрут сохранён');
+				if (res && res.ok === false) { fn.notify(res.error || fn._t('Не удалось сохранить маршрут')); return; }
+				fn.notify(fn._t('%s: маршрут сохранён', d.label || d.hostname || d.mac));
 			})['catch'](function() {
 				sel.disabled = false;
-				fn.notify('Метод set_device пока недоступен');
+				fn.notify(fn._t('Метод set_device пока недоступен'));
 			});
 		});
 		return sel;
@@ -55,7 +55,7 @@ return view.extend({
 		var row = E('div', { 'class': 'fn-rowitem' + (enabled ? '' : ' off') }, [
 			E('span', {
 				'class': 'fn-dot ' + (online ? 'g' : 'dim'),
-				title: online ? 'онлайн' : 'офлайн'
+				title: online ? fn._t('онлайн') : fn._t('офлайн')
 			}),
 			E('div', { style: 'flex:1;min-width:0' }, [
 				E('div', { 'class': 'fn-rowname' }, name),
@@ -66,24 +66,24 @@ return view.extend({
 				this.routeSelect(d, nodes),
 				fn.toggle(enabled, false, function(on) {
 					fn.call.setDevice(d.mac, d.route || 'follow', d.label || '', on).then(function(res) {
-						if (res && res.ok === false) { fn.notify(res.error || 'Не удалось переключить'); return; }
+						if (res && res.ok === false) { fn.notify(res.error || fn._t('Не удалось переключить')); return; }
 						row.classList.toggle('off', !on);
-						fn.notify(name + ': ' + (on ? 'правило вкл' : 'правило выкл'));
+						fn.notify(name + ': ' + (on ? fn._t('правило вкл') : fn._t('правило выкл')));
 					})['catch'](function() {
-						fn.notify('Метод set_device пока недоступен');
+						fn.notify(fn._t('Метод set_device пока недоступен'));
 					});
 				}),
 				E('button', {
 					'class': 'fn-btn sm',
-					title: 'Убрать устройство из списка',
+					title: fn._t('Убрать устройство из списка'),
 					click: function() {
-						if (!confirm('Убрать устройство «' + name + '» и его маршрут?')) return;
+						if (!confirm(fn._t('Убрать устройство «%s» и его маршрут?', name))) return;
 						fn.call.delDevice(d.mac).then(function(res) {
-							if (res && res.ok === false) { fn.notify(res.error || 'Не удалось удалить'); return; }
-							fn.notify('Устройство удалено');
+							if (res && res.ok === false) { fn.notify(res.error || fn._t('Не удалось удалить')); return; }
+							fn.notify(fn._t('Устройство удалено'));
 							row.remove();
 						})['catch'](function() {
-							fn.notify('Метод del_device пока недоступен');
+							fn.notify(fn._t('Метод del_device пока недоступен'));
 						});
 					}
 				}, '🗑')
@@ -102,7 +102,7 @@ return view.extend({
 
 		// метод ещё не реализован бэкендом
 		if (devRes === null) {
-			root.appendChild(fn.unavailCard('Устройства'));
+			root.appendChild(fn.unavailCard(fn._t('Устройства')));
 			return fn.page('devices', root);
 		}
 
@@ -114,19 +114,18 @@ return view.extend({
 		var offline = devices.filter(function(d) { return !d.online; });
 
 		root.appendChild(E('div', { 'class': 'fn-section' }, [
-			'Устройства в сети', E('span', { 'class': 'cnt' }, String(devices.length))
+			fn._t('Устройства в сети'), E('span', { 'class': 'cnt' }, String(devices.length))
 		]));
 
 		if (devices.length === 0) {
 			root.appendChild(E('div', { 'class': 'fn-card' }, [
-				E('div', { 'class': 'fn-card-title' }, 'Нет устройств'),
+				E('div', { 'class': 'fn-card-title' }, fn._t('Нет устройств')),
 				E('div', { 'class': 'fn-card-sub' },
-					'Появятся после подключения к роутеру — Морок подхватит их из DHCP-аренд автоматически.')
+					fn._t('Появятся после подключения к роутеру — Морок подхватит их из DHCP-аренд автоматически.'))
 			]));
 		} else {
 			root.appendChild(E('div', { 'class': 'fn-card fn-card-sub', style: 'margin-bottom:12px' },
-				'Маршрут устройства важнее общих правил: «Всегда VPN» гонит весь трафик устройства через туннель, ' +
-				'«Напрямую» — мимо него, конкретная нода — закрепляет устройство за ней.'));
+				fn._t('Маршрут устройства важнее общих правил: «Всегда VPN» гонит весь трафик устройства через туннель, «Напрямую» — мимо него, конкретная нода — закрепляет устройство за ней.')));
 			if (online.length) {
 				var g1 = E('div', { 'class': 'fn-group' });
 				online.forEach(function(d) { g1.appendChild(self.deviceRow(d, nodes)); });
@@ -134,7 +133,7 @@ return view.extend({
 			}
 			if (offline.length) {
 				root.appendChild(E('div', { 'class': 'fn-section' }, [
-					'Офлайн', E('span', { 'class': 'cnt' }, String(offline.length))
+					fn._t('Офлайн'), E('span', { 'class': 'cnt' }, String(offline.length))
 				]));
 				var g2 = E('div', { 'class': 'fn-group' });
 				offline.forEach(function(d) { g2.appendChild(self.deviceRow(d, nodes)); });

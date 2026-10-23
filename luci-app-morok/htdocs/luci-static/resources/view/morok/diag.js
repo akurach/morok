@@ -31,28 +31,28 @@ return view.extend({
 		var kids = [
 			E('div', { 'class': 'fn-diag-ico ' + icoCls }, icoKids),
 			E('div', { style: 'flex:1;min-width:0' }, [
-				E('div', { 'class': 'fn-rowname' }, s.label || s.id || '?'),
+				E('div', { 'class': 'fn-rowname' }, fn._t(s.label || s.id || '?')),
 				E('div', { 'class': 'fn-diag-detail' },
 					s.detail ? String(s.detail)
-						: s.status === 'run' ? 'проверяю…'
-						: 'ожидает запуска')
+						: s.status === 'run' ? fn._t('проверяю…')
+						: fn._t('ожидает запуска'))
 			])
 		];
 		if (s.status === 'fail' && s.fix) {
-			var fixBtn = E('button', { 'class': 'fn-btn sm', style: 'flex-shrink:0' }, '🔧 Исправить');
+			var fixBtn = E('button', { 'class': 'fn-btn sm', style: 'flex-shrink:0' }, fn._t('🔧 Исправить'));
 			fixBtn.addEventListener('click', function() {
 				fixBtn.disabled = true;
-				fixBtn.textContent = 'Чиню…';
+				fixBtn.textContent = fn._t('Чиню…');
 				fn.call.runFix(s.id).then(function(res) {
 					if (res && res.ok === false)
-						fn.notify(res.error || 'Исправление не удалось');
+						fn.notify(res.error || fn._t('Исправление не удалось'));
 					else
-						fn.notify('Исправление выполнено — перепроверяю шаг…');
+						fn.notify(fn._t('Исправление выполнено — перепроверяю шаг…'));
 					self.runStep(s.id, true);
 				})['catch'](function() {
 					fixBtn.disabled = false;
-					fixBtn.textContent = '🔧 Исправить';
-					fn.notify('Метод run_fix пока недоступен');
+					fixBtn.textContent = fn._t('🔧 Исправить');
+					fn.notify(fn._t('Метод run_fix пока недоступен'));
 				});
 			});
 			kids.push(fixBtn);
@@ -125,10 +125,10 @@ return view.extend({
 		});
 		summary.textContent = '';
 		if (done < this.steps.length)
-			summary.appendChild(E('span', { 'class': 'fn-pill b' }, 'проверено ' + done + ' из ' + this.steps.length));
+			summary.appendChild(E('span', { 'class': 'fn-pill b' }, fn._t('проверено %s из %s', done, this.steps.length)));
 		else
 			summary.appendChild(E('span', { 'class': 'fn-pill ' + (fails ? 'r' : warns ? 'y' : 'g') },
-				fails ? ('проблем: ' + fails) : warns ? ('замечаний: ' + warns) : 'всё в порядке'));
+				fails ? fn._t('проблем: %s', fails) : warns ? fn._t('замечаний: %s', warns) : fn._t('всё в порядке')));
 	},
 
 	renderSteps: function() {
@@ -137,7 +137,7 @@ return view.extend({
 		box.textContent = '';
 		var self = this;
 		if (!this.steps || this.steps.length === 0) {
-			box.appendChild(fn.unavailCard('Диагностика'));
+			box.appendChild(fn.unavailCard(fn._t('Диагностика')));
 			return;
 		}
 		this.steps.forEach(function(s) { box.appendChild(self.stepCard(s)); });
@@ -153,14 +153,14 @@ return view.extend({
 			return { id: s.id, label: s.label, status: 'wait', detail: '' };
 		});
 
-		var runBtn = E('button', { 'class': 'fn-btn primary' }, '▶ Запустить проверку');
+		var runBtn = E('button', { 'class': 'fn-btn primary' }, fn._t('▶ Запустить проверку'));
 		runBtn.addEventListener('click', function() {
 			if (self.running) return;
 			self.running = true;
 			runBtn.disabled = true;
 			runBtn.textContent = '';
 			runBtn.appendChild(E('span', { 'class': 'fn-spin' }));
-			runBtn.appendChild(document.createTextNode(' Проверяю…'));
+			runBtn.appendChild(document.createTextNode(fn._t(' Проверяю…')));
 
 			// сброс шагов в «ожидает»
 			self.steps.forEach(function(s) { s.status = 'wait'; s.detail = ''; s.fix = null; });
@@ -169,7 +169,7 @@ return view.extend({
 			var done = function() {
 				self.running = false;
 				runBtn.disabled = false;
-				runBtn.textContent = '↻ Проверить ещё раз';
+				runBtn.textContent = fn._t('↻ Проверить ещё раз');
 			};
 
 			if (self.useSteps) {
@@ -190,15 +190,15 @@ return view.extend({
 			E('div', { 'class': 'fn-card' }, [
 				E('div', { 'class': 'fn-spread' }, [
 					E('div', [
-						E('div', { 'class': 'fn-card-title' }, 'Диагностика'),
-						E('div', { 'class': 'fn-card-sub' }, 'поэтапная проверка: сервис → конфиг → туннель → DNS → доставка пакетов')
+						E('div', { 'class': 'fn-card-title' }, fn._t('Диагностика')),
+						E('div', { 'class': 'fn-card-sub' }, fn._t('поэтапная проверка: сервис → конфиг → туннель → DNS → доставка пакетов'))
 					]),
 					runBtn
 				])
 			]),
 			E('div', { 'class': 'fn-card fn-mt', style: 'padding:6px 0' }, [
 				E('div', { style: 'padding:12px 18px 10px;display:flex;align-items:center;gap:10px' }, [
-					E('span', { 'class': 'fn-card-title' }, 'Шаги проверки'),
+					E('span', { 'class': 'fn-card-title' }, fn._t('Шаги проверки')),
 					E('span', { id: 'fn-diag-summary' })
 				]),
 				E('div', { id: 'fn-diag-steps' }, stepEls)

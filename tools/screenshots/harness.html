@@ -23,12 +23,14 @@
 <body>
 <div id="maincontent"><div class="container" id="view"></div></div>
 <script>
-/* скриншоты — для русскоязычного README: форсируем ru-формат дат
-   (headless Chrome игнорирует --lang при toLocaleString без аргументов) */
+/* скриншоты: форсируем формат дат под язык кадра
+   (headless Chrome игнорирует --lang при toLocaleString без аргументов);
+   ?lang=en → en-US, иначе ru-RU */
 (function() {
+	var isEn = new URLSearchParams(location.search).get('lang') === 'en';
 	var orig = Date.prototype.toLocaleString;
 	Date.prototype.toLocaleString = function(loc, opts) {
-		return orig.call(this, loc || 'ru-RU', opts);
+		return orig.call(this, loc || (isEn ? 'en-US' : 'ru-RU'), opts);
 	};
 })();
 </script>
@@ -38,7 +40,9 @@
 (async function() {
   try {
     var viewName = new URLSearchParams(location.search).get('view') || 'dashboard';
-    await MorokShim.loadCommon('/luci-app-morok/htdocs/luci-static/resources/morok/common.js');
+    await MorokShim.loadCommon(
+      '/luci-app-morok/htdocs/luci-static/resources/morok/common.js',
+      '/luci-app-morok/htdocs/luci-static/resources/morok/i18n.js');
     var inst = await MorokShim.loadView(
       '/luci-app-morok/htdocs/luci-static/resources/view/morok/' + viewName + '.js');
     var data = inst.load ? await inst.load() : null;
