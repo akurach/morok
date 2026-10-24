@@ -71,10 +71,17 @@ return view.extend({
 				(chain.length ? (pos >= 0 ? fn._t(' · в цепочке %s/%s', pos + 1, chain.length) : fn._t(' · вне цепочки')) : '');
 		this.setStat('fn-st-ping', pingTxt);
 
-		// ноды: живо X из Y (из включённых)
+		// ноды: живо X из Y — но только среди ИЗМЕРЕННЫХ; если замеров ещё
+		// не было (пустой кэш после рестарта/переустановки), честно пишем
+		// «не проверялись», а не пугаем «0 из 33»
 		var enabled = nodes.filter(function(n) { return n.enabled; });
-		var alive = enabled.filter(function(n) { return this.pickMs(n) != null; }, this);
-		this.setStat('fn-st-nodes', fn._t('%s из %s', alive.length, enabled.length));
+		var measured = enabled.filter(function(n) {
+			return n.tcp_ms != null || n.url_ms != null || (n.ping != null && n.ping > 0);
+		});
+		var alive = measured.filter(function(n) { return this.pickMs(n) != null; }, this);
+		this.setStat('fn-st-nodes', measured.length === 0
+			? fn._t('не проверялись')
+			: fn._t('%s из %s', alive.length, measured.length));
 
 		// правила: N в VPN / M оптимизация / K напрямую (только включённые)
 		var cnt = { proxy: 0, antidpi: 0, direct: 0 };

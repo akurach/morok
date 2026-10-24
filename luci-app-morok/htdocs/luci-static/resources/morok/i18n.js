@@ -95,6 +95,8 @@ var STR = {
 	' · ядро: %s': ' · engine: %s',
 	'пинг недоступен под xray': 'ping unavailable under xray',
 	'не измерено': 'not measured',
+	'не проверялись': 'not checked yet',
+	'Ещё не измерялось — нажми «Проверить все» на странице нод': 'Not measured yet — press "Check all" on the nodes page',
 	'%s мс': '%s ms',
 	' · в цепочке %s/%s': ' · in chain %s/%s',
 	' · вне цепочки': ' · not in chain',

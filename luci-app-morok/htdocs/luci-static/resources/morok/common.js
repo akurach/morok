@@ -256,7 +256,10 @@ function toggle(checked, danger, onChange) {
 }
 
 function pingPill(ping) {
-	if (ping == null) return E('span', { 'class': 'fn-pill r' }, 'timeout');
+	// null/0 = «ещё не измерялось» — нейтрально, а не красная паника:
+	// красное только у реально замеренных мёртвых (см. metricCell)
+	if (!ping) return E('span', { 'class': 'fn-pill dim',
+		title: i18n.t('Ещё не измерялось — нажми «Проверить все» на странице нод') }, '—');
 	var cls = ping < 90 ? 'g' : ping < 180 ? 'y' : 'r';
 	return E('span', { 'class': 'fn-pill ' + cls }, ping + ' ms');
 }

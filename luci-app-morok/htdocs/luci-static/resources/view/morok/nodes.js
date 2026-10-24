@@ -710,6 +710,16 @@ return view.extend({
 					E('div', { 'class': 'fn-card-title' }, fn._t('Нод пока нет')),
 					E('div', { 'class': 'fn-card-sub' }, fn._t('Добавь подписку или ноду по ссылке — кнопки выше.'))
 				]));
+
+			// Автопроверка: ни одна включённая нода ещё не измерялась
+			// (пустой кэш после переустановки/перезагрузки) → прогоняем
+			// «Проверить все» сами, иначе страница пугает пустыми «—»
+			var anyEnabled = (nodesData.nodes || []).some(function(n) { return n.enabled; });
+			var anyMeasured = (nodesData.nodes || []).some(function(n) {
+				return n.tcp_ms != null || n.url_ms != null || (n.ping != null && n.ping > 0);
+			});
+			if (self.engine === 'sing-box' && st.running && anyEnabled && !anyMeasured)
+				self.testAll(pingBtn);
 		});
 
 		return fn.page('nodes', root);

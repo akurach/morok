@@ -65,6 +65,18 @@ function clash_delays() {
 	return out;
 }
 
+// «измерено хоть что-то» отдельно от «живо»: Clash history пуста и
+// после рестарта sing-box (ещё не мерял — это НЕ «все упали»), и когда
+// все пробы реально фейлятся (delay=0). all_dead — только второй случай.
+function clash_measured_count() {
+	let n = 0;
+	let proxies = http_get(CLASH_API + '/proxies', 2);
+	if (!proxies || !proxies.proxies) return 0;
+	for (let name, item in proxies.proxies)
+		if (item.history && length(item.history) > 0) n++;
+	return n;
+}
+
 function read_globals(c) {
 	return c.get_all(CONF, 'globals') || {};
 }
@@ -910,10 +922,14 @@ let methods = {
 			active_label: active_label,
 			// активная нода протухла (удалена/выключена) — фронт покажет предупреждение
 			active_broken: active != '' && !active_found,
-			active_ping: delays[active] || 0,
+			// null = «ещё не измерено» (рестарт ядра, Clash history пуста),
+			// а не 0 — иначе фронт рисует зелёные «0 ms»
+			active_ping: delays[active] != null ? delays[active] : null,
 			chain: fb.chain,
 			kill_switch: fb.kill_switch,
-			all_dead: running && engine == 'sing-box' && length(keys(delays)) == 0,
+			// «все упали» — только когда пробы УЖЕ были и все фейлятся;
+			// пустая history после рестарта = «не знаем», а не «упали»
+			all_dead: running && engine == 'sing-box' && length(keys(delays)) == 0 && clash_measured_count() > 0,
 			antidpi_engine: c.get(CONF, 'antidpi', 'engine') || 'none',
 			antidpi_running: bin_running('nfqws2'),
 			// Wave 3.1: доступность типа ноды awg (kmod или amneziawg-go + утилита awg)
@@ -979,10 +995,13 @@ let methods = {
 			if (s.enabled != '1') return;
 			let id = s['.name'];
 			let m = read_test_result(id);
+			// замер был, но ответа нет → 0 («нет ответа», красное);
+			// null остаётся только у нод, которых ещё НИ РАЗУ не меряли
+			// (нет в кэше) — фронт показывает их нейтральным «—»
 			let item = {
 				id: id,
-				tcp_ms: m.tcp_ms,
-				url_ms: m.url_ms,
+				tcp_ms: m.tcp_ms != null ? m.tcp_ms : 0,
+				url_ms: m.url_ms != null ? m.url_ms : 0,
 				// Clash API не умеет DNS-пробу через конкретный outbound —
 				// честно null, а не выдуманное значение
 				dns_ok: null
