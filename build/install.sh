@@ -173,5 +173,42 @@ else
 	echo "install.sh: ВНИМАНИЕ: ubus-объект 'morok' не виден — попробуй: /etc/init.d/rpcd reload"
 fi
 
+# --- опционально: switchd — диспетчер резервного канала Морок ↔ VanyaVPN ---
+# Ставим только когда на роутере обнаружен VanyaVPN — без него диспетчеру
+# нечего переключать. Переопределяется: MOROK_SWITCHD=1 (всегда ставить) /
+# MOROK_SWITCHD=0 (никогда). Не пакет, а три текстовых файла из репозитория —
+# удаляется uninstall.sh'ом вместе со всем.
+WANT_SWITCHD=0
+case "${MOROK_SWITCHD:-auto}" in
+	1|yes|force) WANT_SWITCHD=1 ;;
+	0|no|never)  WANT_SWITCHD=0 ;;
+	*) [ -x /usr/bin/vanyavpn ] && WANT_SWITCHD=1 ;;
+esac
+if [ "$WANT_SWITCHD" = "1" ]; then
+	echo "==> VanyaVPN обнаружен — ставлю switchd (резервный канал Морок ↔ VanyaVPN)"
+	SW_BASE="https://cdn.jsdelivr.net/gh/akurach/morok@${RELEASE:-main}/switchd"
+	mkdir -p /tmp/morok-install
+	SW_OK=1
+	for f in switchd switchd.init switchd.config; do
+		if command -v curl >/dev/null 2>&1; then
+			curl -fsSL --retry 2 -o "/tmp/morok-install/$f" "$SW_BASE/$f" || SW_OK=0
+		else
+			wget -q -O "/tmp/morok-install/$f" "$SW_BASE/$f" || SW_OK=0
+		fi
+	done
+	if [ "$SW_OK" = "1" ]; then
+		cp /tmp/morok-install/switchd /usr/sbin/switchd
+		cp /tmp/morok-install/switchd.init /etc/init.d/switchd
+		# конфиг не затираем при обновлении — там выбор primary/тайминги
+		[ -f /etc/config/switchd ] || cp /tmp/morok-install/switchd.config /etc/config/switchd
+		chmod +x /usr/sbin/switchd /etc/init.d/switchd
+		/etc/init.d/switchd enable 2>/dev/null || true
+		/etc/init.d/switchd start 2>/dev/null || true
+		echo "==> switchd установлен и запущен: статус — switchd status, карточка на дашборде"
+	else
+		echo "install.sh: ВНИМАНИЕ: файлы switchd не скачались — пропускаю (Морок работает и без него)"
+	fi
+fi
+
 echo "==> Готово. LuCI → Services → Морок (Ctrl+Shift+R для сброса кэша браузера)."
 echo "    Удаление: sh uninstall.sh   (полный снос с конфигом: sh uninstall.sh --purge)"

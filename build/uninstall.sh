@@ -17,6 +17,19 @@ PURGE=0
 [ "${1:-}" = "--purge" ] && PURGE=1
 
 echo "==> Останавливаю сервис"
+# switchd (опциональный диспетчер резерва) гасим ПЕРВЫМ — иначе он может
+# перезапустить morok посреди удаления
+if [ -f /etc/init.d/switchd ]; then
+	echo "==> Удаляю switchd (диспетчер резервного канала)"
+	/etc/init.d/switchd stop 2>/dev/null || true
+	/etc/init.d/switchd disable 2>/dev/null || true
+	rm -f /usr/sbin/switchd /etc/init.d/switchd
+	if [ "$PURGE" = "1" ]; then
+		rm -f /etc/config/switchd /var/run/switchd.state
+	else
+		echo "    конфиг /etc/config/switchd сохранён"
+	fi
+fi
 /etc/init.d/morok stop 2>/dev/null || true
 /etc/init.d/morok disable 2>/dev/null || true
 # guardian мог остаться демоном вне procd
@@ -39,8 +52,11 @@ fi
 
 echo "==> Чищу nft и policy routing"
 nft delete table inet morok 2>/dev/null || true
-ip rule del fwmark 0x1/0x1 lookup 100 pref 100 2>/dev/null || true
-ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null || true
+# fwmark 0x1 / table 100 разделяет с VanyaVPN — не трогаем, если он установлен
+if ! command -v vanyavpn >/dev/null 2>&1; then
+	ip rule del fwmark 0x1/0x1 lookup 100 pref 100 2>/dev/null || true
+	ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null || true
+fi
 
 echo "==> Чищу cron"
 if [ -f /etc/crontabs/root ]; then
