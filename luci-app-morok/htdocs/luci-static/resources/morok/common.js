@@ -242,7 +242,11 @@ var call = {
 	addSource:   rpc.declare({ object: 'morok', method: 'add_source',
 		params: [ 'label', 'url', 'update_interval' ] }),
 	appCheck:    rpc.declare({ object: 'morok', method: 'app_check' }),
-	appUpdate:   rpc.declare({ object: 'morok', method: 'app_update' })
+	appUpdate:   rpc.declare({ object: 'morok', method: 'app_update' }),
+	/* switchd: диспетчер резервного канала Морок ↔ VanyaVPN */
+	switchdStatus: rpc.declare({ object: 'morok', method: 'switchd_status' }),
+	switchdUse:  rpc.declare({ object: 'morok', method: 'switchd_use', params: [ 'backend' ] }),
+	switchdAuto: rpc.declare({ object: 'morok', method: 'switchd_auto' })
 };
 
 function toggle(checked, danger, onChange) {

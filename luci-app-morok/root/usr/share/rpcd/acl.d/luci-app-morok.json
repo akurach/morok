@@ -13,7 +13,7 @@
 					"devices", "read_log", "guardian_status", "get_dns",
 					"diagnose", "diagnose_step", "backup", "components", "check_domain",
 					"check_update", "get_antidpi", "test_antidpi", "scan_status",
-					"app_check", "market" ],
+					"app_check", "market", "switchd_status" ],
 				"morok_metrics": [ "read" ]
 			},
 			"uci": [ "morok" ]
@@ -29,7 +29,7 @@
 					"set_source", "update_source", "set_antidpi",
 					"scan_start", "scan_apply", "scan_stop",
 					"run_fix", "restore", "update_component", "rollback",
-					"app_update" ],
+					"app_update", "switchd_use", "switchd_auto" ],
 				"morok_metrics": [ "reset" ]
 			},
 			"uci": [ "morok" ]

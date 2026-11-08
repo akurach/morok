@@ -1810,6 +1810,50 @@ let methods = {
 		return { ok: false, error: 'неизвестный fix: ' + id };
 	},
 
+	// ---------- switchd (диспетчер резервного канала Морок ↔ VanyaVPN) ----------
+	switchd_status: function(a) {
+		if (sh_rc('test -x /usr/sbin/switchd') != 0)
+			return { installed: false };
+		let res = { installed: true, active: '', desired: 'auto', fails: 0, last_switch: 0 };
+		let raw = sh('cat /var/run/switchd.state 2>/dev/null') || '';
+		for (let line in split(raw, '\n')) {
+			let kv = split(trim(line), '=');
+			if (length(kv) != 2) continue;
+			if (kv[0] == 'active') res.active = kv[1];
+			if (kv[0] == 'desired') res.desired = kv[1];
+			if (kv[0] == 'fails') res.fails = int(kv[1]);
+			if (kv[0] == 'last_switch') res.last_switch = int(kv[1]);
+		}
+		let prim = trim(sh('uci -q get switchd.main.primary') || '');
+		res.primary = prim != '' ? prim : 'morok';
+		res.morok_running = sb_running();
+		// состояние Вани — из его CLI (json); залогинен = sub active
+		res.vanya_installed = sh_rc('test -x /usr/bin/vanyavpn') == 0;
+		let vj = safe_json(sh('/usr/bin/vanyavpn status --json'));
+		res.vanya_state = (vj && vj.state) || '';
+		res.vanya_signed_in = (vj && vj.account && vj.account.sub == 'active') ? true : false;
+		res.vanya_location = (vj && vj.location && vj.location.name) || '';
+		// демон жив? ([r] — чтобы pgrep -f не цеплял саму команду)
+		res.daemon_running = sh_rc("pgrep -f 'switchd [r]un' >/dev/null") == 0;
+		return res;
+	},
+
+	switchd_use: function(a) {
+		if (sh_rc('test -x /usr/sbin/switchd') != 0)
+			return { ok: false, error: 'switchd не установлен' };
+		if (a.backend != 'morok' && a.backend != 'vanya')
+			return { ok: false, error: 'backend должен быть morok|vanya' };
+		let r = sh_full('/usr/sbin/switchd use ' + a.backend);
+		return { ok: r.rc == 0, note: 'переключение на ' + a.backend + ' запрошено — займёт до минуты' };
+	},
+
+	switchd_auto: function(a) {
+		if (sh_rc('test -x /usr/sbin/switchd') != 0)
+			return { ok: false, error: 'switchd не установлен' };
+		let r = sh_full('/usr/sbin/switchd auto');
+		return { ok: r.rc == 0, note: 'авторежим включён' };
+	},
+
 	backup: function(a) {
 		let c = uc();
 		let dump = {};
@@ -2245,6 +2289,9 @@ let schema = {
 	run_fix: { id: 'string' },
 	get_dns: {},
 	set_dns: { mode: 'string', upstream: 'string', hijack: 'bool' },
+	switchd_status: {},
+	switchd_use: { backend: 'string' },
+	switchd_auto: {},
 	backup: {},
 	restore: { json: 'string' },
 	components: {},

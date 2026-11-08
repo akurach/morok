@@ -11,7 +11,8 @@ return view.extend({
 			L.resolveDefault(fn.call.chain(), {}),
 			L.resolveDefault(fn.call.nodes(), {}),
 			L.resolveDefault(fn.call.rules(), {}),
-			L.resolveDefault(fn.call.metricsRead(), null)
+			L.resolveDefault(fn.call.metricsRead(), null),
+			L.resolveDefault(fn.call.switchdStatus(), null)
 		]);
 	},
 
@@ -441,6 +442,85 @@ return view.extend({
 	},
 
 
+	/* ---------- карточка switchd: резервный канал Морок ↔ VanyaVPN ---------- */
+	renderSwitchd: function(d) {
+		var self = this;
+		if (!d || !d.installed) return E('div'); // нет диспетчера — карточки нет
+
+		var active = d.active || '';
+		function bName(k) { return k === 'vanya' ? 'VanyaVPN' : fn._t('Морок'); }
+
+		function row(name, dotCls, txt) {
+			return E('div', { 'class': 'fn-rowitem', style: 'border:none;padding:6px 0' }, [
+				E('span', { 'class': 'fn-dot ' + dotCls }),
+				E('div', [
+					E('div', { 'class': 'fn-rowname' }, name),
+					E('div', { 'class': 'fn-card-sub' }, txt)
+				])
+			]);
+		}
+
+		var rows = [];
+		rows.push(row(bName('morok'),
+			active === 'morok' ? 'g' : 'dim',
+			active === 'morok' ? fn._t('активен') : fn._t('ожидает в резерве')));
+
+		var vTxt, vDot;
+		if (!d.vanya_signed_in) {
+			vTxt = fn._t('не залогинен — нужен код со страницы аккаунта'); vDot = 'r';
+		} else if (active === 'vanya' && d.vanya_state === 'connected') {
+			vTxt = fn._t('активен') + (d.vanya_location ? ' · ' + d.vanya_location : ''); vDot = 'g';
+		} else if (d.vanya_state === 'paused') {
+			vTxt = fn._t('пауза (резерв)'); vDot = 'dim';
+		} else {
+			vTxt = d.vanya_state || '—'; vDot = 'y';
+		}
+		rows.push(row('VanyaVPN', vDot, vTxt));
+
+		if (active === 'none')
+			rows.push(E('div', { 'class': 'fn-card-sub', style: 'color:#e5534b' },
+				fn._t('оба канала лежат — LAN идёт напрямую')));
+
+		var target = active === 'vanya' ? 'morok' : 'vanya';
+		var switchBtn = E('button', { 'class': 'fn-btn', click: function() {
+			if (!confirm(fn._t('Интернет мигнёт на несколько секунд. Переключить на %s?', bName(target)))) return;
+			switchBtn.disabled = true;
+			fn.call.switchdUse(target).then(function(res) {
+				switchBtn.disabled = false;
+				fn.notify((res && res.note) || fn._t('Переключение запрошено — займёт до минуты'));
+			})['catch'](function() {
+				switchBtn.disabled = false;
+				fn.notify(fn._t('%s: метод пока недоступен', 'switchd_use'));
+			});
+		} }, target === 'vanya' ? fn._t('Перейти на VanyaVPN') : fn._t('Перейти на Морок'));
+
+		var btns = [ switchBtn ];
+		if ((d.desired || 'auto') !== 'auto') {
+			btns.push(E('button', { 'class': 'fn-btn', click: function() {
+				fn.call.switchdAuto().then(function() { fn.notify(fn._t('Авторежим включён')); });
+			} }, fn._t('Авто-режим')));
+		}
+
+		var modeTxt = (d.desired || 'auto') === 'auto' ? fn._t('режим: автоматический') : fn._t('режим: закреплён вручную');
+		var sub = fn._t('диспетчер switchd: аварийное переключение Морок ↔ VanyaVPN') + ' · ' + modeTxt;
+		if (d.last_switch > 0) sub += ' · ' + fn._t('последнее переключение: %s', fn.agoText(d.last_switch));
+
+		var titleKids = [ E('div', { 'class': 'fn-card-title' }, fn._t('🔀 Резервный канал')) ];
+		if (!d.daemon_running)
+			titleKids.push(E('span', { 'class': 'fn-pill r' }, fn._t('диспетчер не запущен')));
+
+		return E('div', { 'class': 'fn-card fn-mt' }, [
+			E('div', { 'class': 'fn-spread' }, [
+				E('div', [
+					E('div', { style: 'display:flex;gap:8px;align-items:center' }, titleKids),
+					E('div', { 'class': 'fn-card-sub' }, sub)
+				]),
+				E('div', { style: 'display:flex;gap:10px;flex-shrink:0' }, btns)
+			]),
+			E('div', {}, rows)
+		]);
+	},
+
 	showWizard: function(st) {
 		st = st || {};
 		var wiz = {
@@ -742,6 +822,7 @@ return view.extend({
 		var nodesData = data[2] || {};
 		var rulesData = data[3] || {};
 		var mxData = data[4] || null;
+		var swData = data[5] || null;
 		var self = this;
 
 		var root = E('div', [
@@ -792,6 +873,8 @@ return view.extend({
 
 			this.renderMetricsCard(),
 
+			E('div', { id: 'fn-sw-slot' }, this.renderSwitchd(swData)),
+
 			this.renderBackupCard(),
 
 			E('div', { 'class': 'fn-card fn-mt' }, [
@@ -820,13 +903,15 @@ return view.extend({
 		var lastHeroSig = null;
 		var lastChainSig = null;
 		var lastMxTs = 0;
+		var lastSwSig = null;
 		poll.add(L.bind(function() {
 			return Promise.all([
 				L.resolveDefault(fn.call.status(), null),
 				L.resolveDefault(fn.call.nodes(), null),
 				L.resolveDefault(fn.call.rules(), null),
 				L.resolveDefault(fn.call.chain(), null),
-				L.resolveDefault(fn.call.metricsRead(), null)
+				L.resolveDefault(fn.call.metricsRead(), null),
+				L.resolveDefault(fn.call.switchdStatus(), null)
 			]).then(function(r) {
 				var s = r[0]; if (!s) return;
 				var heroSig = [ s.running, s.mode, s.active_node, s.active_label, s.active_ping,
@@ -856,6 +941,14 @@ return view.extend({
 				if (mxSig !== lastMxTs) {
 					lastMxTs = mxSig;
 					self.updateMetrics(mx, r[2], r[1]);
+				}
+				// switchd: перерисовка карточки только при смене состояния
+				var sw = r[5];
+				var swSig = sw ? JSON.stringify(sw) : null;
+				if (swSig !== lastSwSig) {
+					lastSwSig = swSig;
+					var swSlot = document.getElementById('fn-sw-slot');
+					if (swSlot) { swSlot.textContent = ''; swSlot.appendChild(self.renderSwitchd(sw)); }
 				}
 			});
 		}, this), 10);

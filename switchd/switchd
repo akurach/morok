@@ -1,0 +1,203 @@
+#!/bin/sh
+# switchd — steering supervisor for the Flint 2 router.
+# Keeps exactly one steering backend active: "morok" (tproxy/sing-box) or
+# "vanya" (VanyaVPN vvtun0). Watches real connectivity through the active
+# backend and fails over to the standby on sustained failure.
+#
+# State:  /var/run/switchd.state   (active=, desired=auto|morok|vanya, fails=, last_switch=)
+# Config: /etc/config/switchd      (UCI section 'main': interval, fails, cooldown, primary, autofailback)
+# CLI:    switchd status | use <morok|vanya> | auto | run
+set -u
+
+STATE=/var/run/switchd.state
+CANARY1=https://www.gstatic.com/generate_204
+CANARY2=http://connectivity-check.ubuntu.com
+VANYA=/usr/bin/vanyavpn
+MOROK_INIT=/etc/init.d/morok
+
+log() { logger -t switchd -- "$*"; }
+
+# ---------- config (read fresh every cycle) ----------
+cfg() { # cfg KEY DEFAULT
+	_v=$(uci -q get switchd.main."$1" 2>/dev/null) && [ -n "$_v" ] && { echo "$_v"; return; }
+	echo "$2"
+}
+
+# ---------- state ----------
+state_get() { sed -n "s/^$1=//p" "$STATE" 2>/dev/null | head -1; }
+state_set() { # state_set KEY VALUE
+	[ -f "$STATE" ] || : > "$STATE"
+	if grep -q "^$1=" "$STATE" 2>/dev/null; then
+		sed -i "s/^$1=.*/$1=$2/" "$STATE"
+	else
+		echo "$1=$2" >> "$STATE"
+	fi
+}
+
+# ---------- probes ----------
+probe_canary() { # probe_canary [curl extra args...]
+	for c in "$CANARY1" "$CANARY2"; do
+		[ "$(curl -m 8 -s -o /dev/null "$@" -w '%{http_code}' "$c" 2>/dev/null)" = "204" ] && return 0
+	done
+	return 1
+}
+morok_probe() {
+	pgrep -f 'sing-box run -c /var/etc/morok' >/dev/null || return 1
+	probe_canary -x http://127.0.0.1:7890
+}
+vstate() { "$VANYA" status --json 2>/dev/null | sed -n 's/.*"state": *"\([a-z_]*\)".*/\1/p' | head -1; }
+vanya_probe() {
+	[ "$(vstate)" = "connected" ] || return 1
+	ip link show vvtun0 >/dev/null 2>&1 || return 1
+	probe_canary --interface vvtun0
+}
+probe() { # probe BACKEND
+	case "$1" in
+	morok) morok_probe ;;
+	vanya) vanya_probe ;;
+	*) return 1 ;;
+	esac
+}
+
+# ---------- standby availability (can we switch TO it?) ----------
+available() {
+	case "$1" in
+	morok) [ -x "$MOROK_INIT" ] ;;
+	vanya) "$VANYA" status --json 2>/dev/null | grep -q '"sub": *"active"' ;;
+	*) return 1 ;;
+	esac
+}
+
+# ---------- activate / deactivate ----------
+wait_for() { # wait_for BACKEND SECONDS
+	_wf_s=$2
+	while [ "$_wf_s" -gt 0 ]; do
+		probe "$1" && return 0
+		sleep 5; _wf_s=$((_wf_s - 5))
+	done
+	return 1
+}
+activate() {
+	case "$1" in
+	morok) "$MOROK_INIT" start >/dev/null 2>&1; wait_for morok 45 ;;
+	vanya) "$VANYA" resume >/dev/null 2>&1; wait_for vanya 45 ;;
+	*) return 1 ;;
+	esac
+}
+deactivate() {
+	case "$1" in
+	morok) "$MOROK_INIT" stop >/dev/null 2>&1 ;;
+	vanya) "$VANYA" pause forever >/dev/null 2>&1 ;;
+	esac
+}
+
+# ---------- switching ----------
+switch_to() { # switch_to TARGET REASON
+	_sw_t=$1; _sw_c=$(state_get active)
+	[ "$_sw_c" = "$_sw_t" ] && return 0
+	log "switch: $_sw_c -> $_sw_t (reason: $2)"
+	[ -n "$_sw_c" ] && deactivate "$_sw_c"
+	if activate "$_sw_t"; then
+		state_set active "$_sw_t"
+		state_set last_switch "$(date +%s)"
+		state_set fails 0
+		log "switch: $_sw_t is up and verified"
+		return 0
+	fi
+	log "switch: $_sw_t failed to come up, rolling back to $_sw_c"
+	if [ -n "$_sw_c" ] && activate "$_sw_c"; then
+		log "switch: rollback to $_sw_c ok"
+	else
+		state_set active none
+		log "switch: BOTH BACKENDS DOWN, LAN is direct"
+	fi
+	return 1
+}
+
+enforce_exclusivity() {
+	_a=$(state_get active)
+	# a steering layer started outside switchd gets parked
+	if [ "$_a" != "vanya" ] && [ "$(vstate)" = "connected" ]; then
+		log "exclusivity: vanya active outside switchd, pausing"
+		"$VANYA" pause forever >/dev/null 2>&1
+	fi
+	if [ "$_a" != "morok" ] && pgrep -f 'sing-box run -c /var/etc/morok' >/dev/null; then
+		log "exclusivity: morok active outside switchd, stopping"
+		"$MOROK_INIT" stop >/dev/null 2>&1
+	fi
+}
+
+# ---------- daemon loop ----------
+run() {
+	[ -f "$STATE" ] || { echo "active=$(cfg primary morok)"; echo "desired=auto"; echo "fails=0"; echo "last_switch=0"; } > "$STATE"
+	log "started (primary=$(cfg primary morok), interval=$(cfg interval 20)s)"
+	while :; do
+		INTERVAL=$(cfg interval 20)
+		FAILMAX=$(cfg fails 3)
+		COOLDOWN=$(cfg cooldown 300)
+		PRIMARY=$(cfg primary morok)
+		AUTOFB=$(cfg autofailback 0)
+		STANDBY=morok; [ "$PRIMARY" = morok ] && STANDBY=vanya
+
+		# first run: make sure the recorded active backend really is the one steering
+		_a=$(state_get active)
+		case "$_a" in morok|vanya) : ;; *) state_set active "$PRIMARY"; _a=$PRIMARY ;; esac
+
+		enforce_exclusivity
+		_a=$(state_get active)
+		_d=$(state_get desired)
+
+		if [ "$_d" != "auto" ] && [ "$_d" != "$_a" ]; then
+			switch_to "$_d" "manual request"
+		elif [ "$_a" = "none" ]; then
+			# both were down: retry primary, then standby
+			available "$PRIMARY" && switch_to "$PRIMARY" "recovery attempt"
+			[ "$(state_get active)" = "none" ] && available "$STANDBY" && switch_to "$STANDBY" "recovery attempt"
+		else
+			if probe "$_a"; then
+				state_set fails 0
+				# optional failback: return to primary after cooldown
+				if [ "$_a" != "$PRIMARY" ] && [ "$AUTOFB" = "1" ]; then
+					_now=$(date +%s); _last=$(state_get last_switch); _last=${_last:-0}
+					if [ $((_now - _last)) -ge "$COOLDOWN" ] && available "$PRIMARY"; then
+						switch_to "$PRIMARY" "auto-failback"
+					fi
+				fi
+			else
+				_f=$(state_get fails); _f=${_f:-0}; _f=$((_f + 1)); state_set fails "$_f"
+				log "probe failed on $_a ($_f/$FAILMAX)"
+				if [ "$_f" -ge "$FAILMAX" ]; then
+					_now=$(date +%s); _last=$(state_get last_switch); _last=${_last:-0}
+					if [ $((_now - _last)) -ge "$COOLDOWN" ]; then
+						_other=$STANDBY; [ "$_a" = "$STANDBY" ] && _other=$PRIMARY
+						if available "$_other"; then
+							switch_to "$_other" "active backend $_a failing"
+						else
+							log "standby $_other unavailable, staying on $_a"
+							state_set fails 0
+						fi
+					else
+						state_set fails 0
+					fi
+				fi
+			fi
+		fi
+		sleep "$INTERVAL"
+	done
+}
+
+# ---------- CLI ----------
+status() {
+	_a=$(state_get active); _d=$(state_get desired)
+	echo "switchd: active=${_a:-unknown} desired=${_d:-auto} primary=$(cfg primary morok)"
+	echo "morok: $(morok_probe && echo 'UP (probe ok)' || { pgrep -f 'sing-box run -c /var/etc/morok' >/dev/null && echo 'running, probe FAILED' || echo 'stopped'; })"
+	echo "vanya: state=$(vstate) $(vanya_probe && echo '(probe ok)')"
+}
+
+case "${1:-}" in
+run) run ;;
+status) status ;;
+use) case "${2:-}" in morok|vanya) state_set desired "$2"; log "manual: desired=$2"; echo "desired=$2 (switch on next cycle, <= $(cfg interval 20)s)" ;; *) echo "usage: switchd use <morok|vanya>" >&2; exit 1 ;; esac ;;
+auto) state_set desired auto; log "manual: desired=auto"; echo "desired=auto" ;;
+*) echo "usage: switchd run|status|use <morok|vanya>|auto" >&2; exit 1 ;;
+esac
